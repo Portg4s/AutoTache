@@ -1,0 +1,6 @@
+httpx
+python-dotenv
+pydantic
+PyYAML
+python-dateutil
+pytest

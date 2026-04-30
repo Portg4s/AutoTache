@@ -1,0 +1,60 @@
+keywords:
+  - wordpress
+  - développeur wordpress
+  - intégrateur wordpress
+  - intégrateur web
+  - intégrateur front-end
+  - développeur front-end
+  - frontend developer
+  - front-end developer
+  - webdesigner
+  - designer web
+  - ui designer
+  - ux designer
+  - ui/ux designer
+  - graphiste web
+  - graphiste
+  - figma
+  - elementor
+  - woocommerce
+  - html
+  - css
+  - javascript
+  - react
+  - vue.js
+  - tailwind
+  - bootstrap
+
+communes:
+  - "75056"
+
+distance_km: 20
+contract_types:
+  - CDI
+  - CDD
+days_back: 7
+allow_internship: false
+allow_apprenticeship: false
+
+filters:
+  exclude_terms:
+    - data scientist
+    - data engineer
+    - data analyst
+    - calcul scientifique
+    - ingénieur mécanique
+    - ingénieur btp
+    - ingénieur qualité
+    - ingénieur méthodes
+    - ingénieur maintenance
+    - support informatique
+    - commercial
+  include_terms:
+    - front-end
+    - frontend
+    - wordpress
+    - intégrateur
+    - ui
+    - ux
+    - webdesigner
+    - graphiste web

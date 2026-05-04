@@ -13,3 +13,14 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+norecursedirs = [
+    ".venv",
+    ".git",
+    ".pytest_cache",
+    ".pytest-run-autotache-sources",
+    ".pytest-run-verify",
+    ".pytest-tmp",
+    "pytest_run_autotache_sources",
+]

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import time
 from typing import Any
 
 from .exporter import export_offers_to_csv, export_offers_to_xlsx
 from .france_travail_client import FranceTravailClient
-from .normalizer import normalize_france_travail_offer
 from .notifications import send_discord_summary
 from .scoring import score_offer
+from .sources.france_travail import FranceTravailSource
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
 
 
@@ -36,15 +36,9 @@ def run_job_search(
         max_retries=config.api.max_retries,
     )
 
-    raw_offers = _collect_raw_offers(config, active_client, sleep_func=sleep_func)
-    normalized_offers = [
-        normalize_france_travail_offer(
-            raw_offer,
-            allow_stage=config.allow_internship,
-            allow_alternance=config.allow_apprenticeship,
-        )
-        for raw_offer in raw_offers
-    ]
+    source_result = FranceTravailSource(config, active_client, sleep_func=sleep_func).collect()
+    raw_offers = source_result.raw_offers
+    normalized_offers = source_result.normalized_offers
     normalized_offers = [_with_score(offer) for offer in normalized_offers]
     unique_normalized_offers = _deduplicate_by_id(normalized_offers)
     relevant_offers = [offer for offer in normalized_offers if offer["is_relevant"] is True]
@@ -87,30 +81,6 @@ def run_job_search(
         summary["debug_offers"] = unique_normalized_offers
     _notify_discord_if_needed(config, env_settings, summary, discord_sender)
     return summary
-
-
-def _collect_raw_offers(config: Any, client: Any, sleep_func: Any = time.sleep) -> list[dict]:
-    raw_offers: list[dict] = []
-    min_creation_date, max_creation_date = _creation_date_range(config.days_back)
-    is_first_call = True
-
-    for keyword in config.keywords:
-        for commune in config.communes:
-            for contract_type in config.contract_types:
-                if not is_first_call and config.api.request_delay_seconds > 0:
-                    sleep_func(config.api.request_delay_seconds)
-                is_first_call = False
-                results = client.search_offers(
-                    keyword=keyword,
-                    commune=commune,
-                    distance=config.distance_km,
-                    type_contrat=contract_type,
-                    min_creation_date=min_creation_date,
-                    max_creation_date=max_creation_date,
-                )
-                raw_offers.extend(results or [])
-
-    return raw_offers
 
 
 def _deduplicate_by_id(offers: list[dict]) -> list[dict]:
@@ -179,9 +149,3 @@ def _notify_discord_if_needed(config: Any, env_settings: Any, summary: dict[str,
     summary["discord_status"] = result.get("status")
     summary["discord_error"] = result.get("error")
 
-
-def _creation_date_range(days_back: int) -> tuple[str, str]:
-    now = datetime.now()
-    min_creation_date = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00Z")
-    max_creation_date = now.strftime("%Y-%m-%dT23:59:59Z")
-    return min_creation_date, max_creation_date

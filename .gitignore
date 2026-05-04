@@ -18,5 +18,7 @@ config.yaml
 
 *.egg-info/
 
+.pytest-run-autotache-sources/
 .pytest-run-verify/
 .pytest-tmp/
+pytest_run_autotache_sources/

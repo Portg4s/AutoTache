@@ -3,10 +3,13 @@ import json
 import re
 from pathlib import Path
 
+import httpx
 from openpyxl import load_workbook
 
 from autotache_jobs.models import AppConfig, FranceTravailEnv
+import autotache_jobs.runner as runner_module
 from autotache_jobs.runner import run_job_search
+from autotache_jobs.scoring import DECISION_RELEVANT, DECISION_REVIEW
 
 
 class FakeFranceTravailClient:
@@ -69,6 +72,43 @@ def _wordpress_offer(offer_id: str = "A1") -> dict:
             {"libelle": "JavaScript"},
         ],
     }
+
+
+def _arbeitnow_offer(offer_id: str = "arbeitnow-front") -> dict:
+    return {
+        "slug": offer_id,
+        "title": "Frontend Developer WordPress",
+        "description": (
+            "Build WordPress interfaces with Elementor, HTML, CSS and JavaScript. "
+            "Remote work possible."
+        ),
+        "company_name": "Remote Studio",
+        "location": "Remote",
+        "remote": True,
+        "job_types": ["Full-time"],
+        "tags": ["WordPress", "Elementor"],
+        "url": f"https://www.arbeitnow.com/jobs/{offer_id}",
+    }
+
+
+def _arbeitnow_client(raw_offers: list[dict]) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": raw_offers, "links": {"next": None}, "meta": {}})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _fake_scoring(decisions_by_offer_id: dict[str, str]):
+    def fake_score(offer: dict) -> dict:
+        decision = decisions_by_offer_id[str(offer["id_offre"])]
+        return {
+            "score_total": 90 if decision == DECISION_RELEVANT else 50,
+            "decision": decision,
+            "score_reason": f"decision forcee: {decision}",
+            "score_details": {"test": decision},
+        }
+
+    return fake_score
 
 
 def test_runner_exports_new_relevant_offer(tmp_path: Path) -> None:
@@ -485,3 +525,173 @@ def test_runner_discord_no_relevant_offer_sends_when_configured(tmp_path: Path) 
     assert len(calls) == 1
     assert calls[0][1]["total_relevant"] == 0
     assert summary["discord_sent"] is True
+
+
+def test_runner_default_uses_france_travail_and_not_arbeitnow(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+
+    summary = run_job_search(
+        _config(),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer()]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert len(client.calls) == 1
+    assert summary["total_raw"] == 1
+    assert summary["sources_enabled"] == ["France Travail"]
+    assert summary["source_counts"] == {"France Travail": {"raw": 1, "normalized": 1}}
+
+
+def test_runner_can_use_arbeitnow_when_france_travail_disabled(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+
+    summary = run_job_search(
+        _config(sources={"france_travail": {"enabled": False}, "arbeitnow": {"enabled": True, "max_pages": 1}}),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer()]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert client.calls == []
+    assert summary["total_raw"] == 1
+    assert summary["total_relevant"] == 1
+    assert summary["sources_enabled"] == ["Arbeitnow"]
+    assert summary["source_counts"] == {"Arbeitnow": {"raw": 1, "normalized": 1}}
+
+
+def test_runner_merges_france_travail_and_arbeitnow_sources(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("FT1")]])
+
+    summary = run_job_search(
+        _config(sources={"france_travail": {"enabled": True}, "arbeitnow": {"enabled": True, "max_pages": 1}}),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert len(client.calls) == 1
+    assert summary["total_raw"] == 2
+    assert summary["total_unique_normalized"] == 2
+    assert summary["total_relevant"] == 2
+    assert summary["sources_enabled"] == ["France Travail", "Arbeitnow"]
+    assert summary["source_counts"] == {
+        "France Travail": {"raw": 1, "normalized": 1},
+        "Arbeitnow": {"raw": 1, "normalized": 1},
+    }
+    assert {offer["source"] for offer in summary["debug_offers"]} == {"France Travail", "Arbeitnow"}
+
+
+def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+
+    summary = run_job_search(
+        _config(sources={"france_travail": {"enabled": False}, "arbeitnow": {"enabled": False}}),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer()]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert client.calls == []
+    assert summary["source_status"] == "no_sources_enabled"
+    assert summary["sources_enabled"] == []
+    assert summary["source_counts"] == {}
+    assert summary["total_raw"] == 0
+    assert summary["total_normalized"] == 0
+    assert summary["total_relevant"] == 0
+    assert summary["total_new"] == 0
+    assert summary["export_path"] is None
+    assert summary["debug_export_path"] is None
+    assert summary["debug_offers"] == []
+
+
+def test_runner_main_export_excludes_rejected_decision_even_when_relevant(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": "Rejeté"}))
+
+    summary = run_job_search(
+        _config(),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert summary["total_relevant"] == 1
+    assert summary["total_exportable"] == 0
+    assert summary["total_new"] == 0
+    assert summary["export_path"] is None
+    assert summary["xlsx_export_path"] is None
+    assert summary["debug_export_path"] is not None
+    assert summary["debug_offers"][0]["id_offre"] == "A1"
+    assert summary["debug_offers"][0]["decision"].startswith("Rejet")
+    assert not Path(summary["seen_ids_path"]).exists()
+
+
+def test_runner_main_export_includes_review_and_relevant_decisions(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient(
+        [[_wordpress_offer("PERTINENT"), _wordpress_offer("REVIEW"), _wordpress_offer("REJECTED")]]
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "score_offer",
+        _fake_scoring(
+            {
+                "PERTINENT": DECISION_RELEVANT,
+                "REVIEW": DECISION_REVIEW,
+                "REJECTED": "Rejeté",
+            }
+        ),
+    )
+
+    summary = run_job_search(
+        _config(),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert summary["total_relevant"] == 3
+    assert summary["total_exportable"] == 2
+    assert summary["total_new"] == 2
+    assert summary["export_path"] is not None
+    assert summary["xlsx_export_path"] is not None
+    with Path(summary["export_path"]).open("r", encoding="utf-8-sig", newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file, delimiter=";"))
+
+    assert [row["id_offre"] for row in rows] == ["PERTINENT", "REVIEW"]
+    assert [offer["id_offre"] for offer in summary["debug_offers"]] == ["PERTINENT", "REVIEW", "REJECTED"]
+    assert json.loads(Path(summary["seen_ids_path"]).read_text(encoding="utf-8")) == ["PERTINENT", "REVIEW"]
+
+
+def test_runner_discord_summary_uses_really_exported_offer_count(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    calls = []
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": "Rejeté"}))
+
+    summary = run_job_search(
+        _config(notifications={"discord_enabled": True, "notify_when_no_results": True}),
+        _env(discord_webhook_url="https://discord.test/webhook"),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        discord_sender=lambda webhook_url, payload: calls.append((webhook_url, payload.copy()))
+        or {"sent": True, "status": "sent", "error": None},
+    )
+
+    assert summary["total_relevant"] == 1
+    assert summary["total_new"] == 0
+    assert calls[0][1]["total_new"] == 0

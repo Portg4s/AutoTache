@@ -40,6 +40,13 @@ api:
   request_delay_seconds: 0.8
   max_retries: 3
 
+sources:
+  france_travail:
+    enabled: true
+  arbeitnow:
+    enabled: false
+    max_pages: 1
+
 notifications:
   discord_enabled: false
   notify_when_no_results: false

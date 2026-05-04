@@ -33,6 +33,26 @@ class NotificationConfig(BaseModel):
     notify_when_no_results: bool = False
 
 
+class SourceToggleConfig(BaseModel):
+    """Enable or disable one offer source."""
+
+    enabled: bool = True
+
+
+class ArbeitnowSourceConfig(BaseModel):
+    """Arbeitnow source settings."""
+
+    enabled: bool = False
+    max_pages: int = Field(default=1, ge=1)
+
+
+class SourcesConfig(BaseModel):
+    """Offer sources loaded from the local config file."""
+
+    france_travail: SourceToggleConfig = Field(default_factory=SourceToggleConfig)
+    arbeitnow: ArbeitnowSourceConfig = Field(default_factory=ArbeitnowSourceConfig)
+
+
 class AppConfig(BaseModel):
     """Validated local application configuration."""
 
@@ -46,6 +66,7 @@ class AppConfig(BaseModel):
     api: ApiConfig = Field(default_factory=ApiConfig)
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     filters: ConfigFilters = Field(default_factory=ConfigFilters)
+    sources: SourcesConfig = Field(default_factory=SourcesConfig)
 
     @field_validator("keywords", "communes", "contract_types")
     @classmethod

@@ -39,6 +39,9 @@ filters:
     assert config.communes == ["75056"]
     assert config.api.request_delay_seconds == 0.8
     assert config.api.max_retries == 3
+    assert config.sources.france_travail.enabled is True
+    assert config.sources.arbeitnow.enabled is False
+    assert config.sources.arbeitnow.max_pages == 1
     assert "Configuration chargee avec succes." in summarize_config(config)
 
 
@@ -65,3 +68,36 @@ api:
 
     assert config.api.request_delay_seconds == 1.2
     assert config.api.max_retries == 2
+
+
+def test_load_config_reads_sources_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+keywords:
+  - wordpress
+communes:
+  - "75056"
+distance_km: 20
+contract_types:
+  - CDI
+days_back: 7
+sources:
+  france_travail:
+    enabled: false
+  arbeitnow:
+    enabled: true
+    max_pages: 2
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    summary = summarize_config(config)
+
+    assert config.sources.france_travail.enabled is False
+    assert config.sources.arbeitnow.enabled is True
+    assert config.sources.arbeitnow.max_pages == 2
+    assert "- Source France Travail activee: non" in summary
+    assert "- Source Arbeitnow activee: oui" in summary
+    assert "- Pages max Arbeitnow: 2" in summary

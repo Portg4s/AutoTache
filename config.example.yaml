@@ -40,6 +40,10 @@ api:
   request_delay_seconds: 0.8
   max_retries: 3
 
+notifications:
+  discord_enabled: false
+  notify_when_no_results: false
+
 filters:
   exclude_terms:
     - data scientist

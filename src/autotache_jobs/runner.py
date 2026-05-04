@@ -10,6 +10,8 @@ from typing import Any
 from .exporter import export_offers_to_csv, export_offers_to_xlsx
 from .france_travail_client import FranceTravailClient
 from .normalizer import normalize_france_travail_offer
+from .notifications import send_discord_summary
+from .scoring import score_offer
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
 
 
@@ -21,6 +23,7 @@ def run_job_search(
     export_dir: str | Path = "exports",
     include_debug_offers: bool = False,
     sleep_func: Any = time.sleep,
+    discord_sender: Any = send_discord_summary,
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
@@ -42,6 +45,7 @@ def run_job_search(
         )
         for raw_offer in raw_offers
     ]
+    normalized_offers = [_with_score(offer) for offer in normalized_offers]
     unique_normalized_offers = _deduplicate_by_id(normalized_offers)
     relevant_offers = [offer for offer in normalized_offers if offer["is_relevant"] is True]
     deduplicated_relevant_offers = _deduplicate_by_id(relevant_offers)
@@ -72,9 +76,16 @@ def run_job_search(
         "debug_export_path": str(debug_export_path) if debug_export_path else None,
         "debug_xlsx_export_path": str(debug_xlsx_export_path) if debug_xlsx_export_path else None,
         "seen_ids_path": str(seen_ids_path),
+        "decision_counts": _count_decisions(unique_normalized_offers),
+        "best_score": _best_score(unique_normalized_offers),
+        "discord_enabled": bool(config.notifications.discord_enabled),
+        "discord_sent": False,
+        "discord_status": "disabled",
+        "discord_error": None,
     }
     if include_debug_offers:
         summary["debug_offers"] = unique_normalized_offers
+    _notify_discord_if_needed(config, env_settings, summary, discord_sender)
     return summary
 
 
@@ -119,6 +130,31 @@ def _deduplicate_by_id(offers: list[dict]) -> list[dict]:
     return deduplicated
 
 
+def _with_score(offer: dict) -> dict:
+    scoring = score_offer(offer)
+    return {
+        **offer,
+        "score_total": scoring["score_total"],
+        "decision": scoring["decision"],
+        "score_reason": scoring["score_reason"],
+        "score_details": scoring["score_details"],
+    }
+
+
+def _count_decisions(offers: list[dict]) -> dict[str, int]:
+    counts = {"Pertinent": 0, "À vérifier": 0, "Rejeté": 0}
+    for offer in offers:
+        decision = offer.get("decision")
+        if decision in counts:
+            counts[decision] += 1
+    return counts
+
+
+def _best_score(offers: list[dict]) -> int | None:
+    scores = [offer.get("score_total") for offer in offers if isinstance(offer.get("score_total"), int)]
+    return max(scores) if scores else None
+
+
 def _export_debug_offers(offers: list[dict], export_dir: str | Path) -> Path | None:
     filename = f"debug_offres_{datetime.now().strftime('%Y-%m-%d_%H%M')}.csv"
     return export_offers_to_csv(offers, export_dir, filename=filename)
@@ -127,6 +163,21 @@ def _export_debug_offers(offers: list[dict], export_dir: str | Path) -> Path | N
 def _export_debug_offers_to_xlsx(offers: list[dict], export_dir: str | Path) -> Path | None:
     filename = f"debug_offres_{datetime.now().strftime('%Y-%m-%d_%H%M')}.xlsx"
     return export_offers_to_xlsx(offers, export_dir, filename=filename)
+
+
+def _notify_discord_if_needed(config: Any, env_settings: Any, summary: dict[str, Any], discord_sender: Any) -> None:
+    if not config.notifications.discord_enabled:
+        return
+
+    summary["discord_status"] = "skipped_no_relevant_offers"
+    should_notify = summary["total_relevant"] > 0 or config.notifications.notify_when_no_results
+    if not should_notify:
+        return
+
+    result = discord_sender(env_settings.discord_webhook_url, summary)
+    summary["discord_sent"] = bool(result.get("sent"))
+    summary["discord_status"] = result.get("status")
+    summary["discord_error"] = result.get("error")
 
 
 def _creation_date_range(days_back: int) -> tuple[str, str]:

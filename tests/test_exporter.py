@@ -28,6 +28,19 @@ def _sample_offer() -> dict:
         "date_publication": "2026-04-20",
         "date_actualisation": "2026-04-21",
         "is_relevant": True,
+        "decision": "Pertinent",
+        "score_total": 87,
+        "score_reason": "Pertinent: score 87/100.",
+        "score_details": {
+            "technologies": {"score": 35},
+            "titre": {"score": 25},
+            "domaine_metier": {"score": 12},
+            "localisation": {"score": 10},
+            "teletravail": {"score": 10},
+            "contrat": {"score": 5},
+            "penalties": {"score": 0},
+            "eliminatory_reason": None,
+        },
         "relevance_reason": "Offre conservée",
         "matched_keywords": ["WordPress", "Figma"],
         "excluded_by": [],
@@ -78,6 +91,19 @@ def test_export_csv_converts_lists_to_readable_text(tmp_path: Path) -> None:
     assert rows[0]["excluded_by"] == ""
 
 
+def test_export_csv_converts_score_details_to_readable_text(tmp_path: Path) -> None:
+    output = export_offers_to_csv([_sample_offer()], tmp_path, filename="debug_offres.csv")
+
+    with output.open("r", encoding="utf-8-sig", newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file, delimiter=";"))
+
+    assert rows[0]["decision"] == "Pertinent"
+    assert rows[0]["score_total"] == "87"
+    assert rows[0]["score_reason"] == "Pertinent: score 87/100."
+    assert "technologies=35" in rows[0]["score_details"]
+    assert "titre=25" in rows[0]["score_details"]
+
+
 def test_export_offers_to_xlsx_creates_file(tmp_path: Path) -> None:
     output = export_offers_to_xlsx([_sample_offer()], tmp_path, filename="offres.xlsx")
 
@@ -112,6 +138,20 @@ def test_export_xlsx_converts_lists_to_readable_text(tmp_path: Path) -> None:
     assert worksheet.cell(row=2, column=columns["matched_keywords"]).value == "WordPress, Figma"
     assert worksheet.cell(row=2, column=columns["excluded_by"]).value in {"", None}
     assert worksheet.cell(row=2, column=columns["is_relevant"]).value == "Oui"
+
+
+def test_export_xlsx_converts_score_details_to_readable_text(tmp_path: Path) -> None:
+    output = export_offers_to_xlsx([_sample_offer()], tmp_path, filename="debug_offres.xlsx")
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+    columns = {cell.value: cell.column for cell in worksheet[1]}
+
+    assert worksheet.cell(row=2, column=columns["decision"]).value == "Pertinent"
+    assert worksheet.cell(row=2, column=columns["score_total"]).value == 87
+    assert worksheet.cell(row=2, column=columns["score_reason"]).value == "Pertinent: score 87/100."
+    score_details = worksheet.cell(row=2, column=columns["score_details"]).value
+    assert "technologies=35" in score_details
+    assert "titre=25" in score_details
 
 
 def test_export_xlsx_url_is_clickable(tmp_path: Path) -> None:

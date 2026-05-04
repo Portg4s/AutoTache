@@ -26,6 +26,13 @@ class ApiConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0)
 
 
+class NotificationConfig(BaseModel):
+    """Optional notification settings loaded from the local config file."""
+
+    discord_enabled: bool = False
+    notify_when_no_results: bool = False
+
+
 class AppConfig(BaseModel):
     """Validated local application configuration."""
 
@@ -37,6 +44,7 @@ class AppConfig(BaseModel):
     allow_internship: bool = False
     allow_apprenticeship: bool = False
     api: ApiConfig = Field(default_factory=ApiConfig)
+    notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     filters: ConfigFilters = Field(default_factory=ConfigFilters)
 
     @field_validator("keywords", "communes", "contract_types")
@@ -56,6 +64,7 @@ class FranceTravailEnv(BaseModel):
     scope: str = "api_offresdemploiv2 o2dsoffre"
     token_url: str = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
     api_base_url: str = "https://api.francetravail.io/partenaire/offresdemploi/v2"
+    discord_webhook_url: str = ""
 
     @field_validator("client_id", "client_secret")
     @classmethod
@@ -63,6 +72,11 @@ class FranceTravailEnv(BaseModel):
         if not value or not value.strip():
             raise ValueError("valeur requise")
         return value.strip()
+
+    @field_validator("discord_webhook_url")
+    @classmethod
+    def clean_optional_secret(cls, value: str) -> str:
+        return value.strip() if value else ""
 
 
 class RuntimePaths(BaseModel):

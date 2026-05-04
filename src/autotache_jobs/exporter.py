@@ -34,6 +34,10 @@ CSV_COLUMNS = [
     "date_actualisation",
     "is_relevant",
     "relevance_reason",
+    "decision",
+    "score_total",
+    "score_reason",
+    "score_details",
     "matched_keywords",
     "excluded_by",
     "url_offre",
@@ -134,6 +138,8 @@ def _format_csv_value(value: Any) -> str:
         return ""
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return _format_dict_value(value)
     return str(value)
 
 
@@ -144,6 +150,8 @@ def _format_xlsx_value(column: str, value: Any) -> Any:
         return ""
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return _format_dict_value(value)
     return value
 
 
@@ -164,3 +172,24 @@ def _adjust_column_widths(worksheet: Any) -> None:
                 continue
             max_length = max(max_length, len(str(cell.value)))
         worksheet.column_dimensions[column_letter].width = min(max_length + 2, XLSX_MAX_COLUMN_WIDTH)
+
+
+def _format_dict_value(value: dict[str, Any]) -> str:
+    score_parts = []
+    for key in ["technologies", "titre", "domaine_metier", "localisation", "teletravail", "contrat"]:
+        detail = value.get(key)
+        if isinstance(detail, dict):
+            score_parts.append(f"{key}={detail.get('score', 0)}")
+
+    penalties = value.get("penalties")
+    if isinstance(penalties, dict) and penalties.get("score", 0):
+        score_parts.append(f"penalites={penalties.get('score', 0)}")
+
+    eliminatory_reason = value.get("eliminatory_reason")
+    if eliminatory_reason:
+        score_parts.append(f"eliminatoire={eliminatory_reason}")
+
+    if score_parts:
+        return "; ".join(score_parts)
+
+    return "; ".join(f"{key}={item}" for key, item in value.items())

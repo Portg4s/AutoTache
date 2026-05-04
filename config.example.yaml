@@ -36,6 +36,10 @@ days_back: 7
 allow_internship: false
 allow_apprenticeship: false
 
+api:
+  request_delay_seconds: 0.8
+  max_retries: 3
+
 filters:
   exclude_terms:
     - data scientist

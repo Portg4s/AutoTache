@@ -33,8 +33,10 @@ def _normalize_text(text: str) -> str:
     return without_accents.lower().replace("’", "'")
 
 
-def _parse_number(raw_value: str) -> float:
+def _parse_number(raw_value: str) -> float | None:
     digits = re.sub(r"[^\d,.kK]", "", raw_value).replace(",", ".")
+    if not re.search(r"\d", digits):
+        return None
     if "k" in digits.lower():
         return float(digits.lower().replace("k", "")) * 1000
     return float(digits)
@@ -119,6 +121,8 @@ def parse_salary(text: str) -> dict[str, float | str | bool | None]:
         if match:
             salaire_min = _parse_number(match.group(1))
             salaire_max = _parse_number(match.group(2))
+            if salaire_min is None or salaire_max is None:
+                continue
             if salaire_type is None and max(salaire_min, salaire_max) >= 10000:
                 salaire_type = "annuel"
             return _salary_dict(salaire_min, salaire_max, salaire_type, salaire_brut)
@@ -131,6 +135,8 @@ def parse_salary(text: str) -> dict[str, float | str | bool | None]:
         match = re.search(pattern, normalized)
         if match:
             salaire_min = _parse_number(match.group(1))
+            if salaire_min is None:
+                continue
             return _salary_dict(salaire_min, None, salaire_type, salaire_brut)
 
     return _salary_dict()

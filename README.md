@@ -53,3 +53,24 @@ python -m autotache_jobs
 ```
 
 La logique API complète sera ajoutée par petites étapes vérifiables.
+
+## Automatisation Windows
+
+Le script de lancement est :
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\devAuto\AutoTache\scripts\run_autotache.ps1"
+```
+
+Dans le Planificateur de taches Windows :
+
+- lancer AutoTache tous les jours a 10h si le PC est allume ;
+- activer `Executer la tache des que possible apres un demarrage planifie manque` ;
+- ne pas activer `Reveiller l'ordinateur pour executer cette tache` ;
+- si le PC est eteint a 10h, la tache se lancera apres le prochain demarrage seulement si Windows le permet avec l'option de tache manquee.
+
+La tache doit demarrer dans :
+
+```text
+D:\devAuto\AutoTache
+```

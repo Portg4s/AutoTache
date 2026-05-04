@@ -90,6 +90,18 @@ def test_parse_salary_absent() -> None:
     }
 
 
+def test_parse_salary_ignores_punctuation_before_currency() -> None:
+    result = parse_salary("Conditions à définir. € selon profil.")
+
+    assert result == {
+        "salaire_min": None,
+        "salaire_max": None,
+        "salaire_moyen": None,
+        "salaire_type": None,
+        "salaire_brut": False,
+    }
+
+
 def test_extract_technologies_normalizes_and_deduplicates() -> None:
     result = extract_technologies(
         "WordPress, wordpress, WooCommerce, Vue.js, JS, TypeScript, Tailwind CSS et Figma."

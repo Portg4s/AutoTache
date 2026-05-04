@@ -4,7 +4,7 @@ import pytest
 from autotache_jobs.france_travail_client import FranceTravailClient, FranceTravailClientError
 
 
-def _client_with_transport(transport: httpx.MockTransport) -> FranceTravailClient:
+def _client_with_transport(transport: httpx.MockTransport, **overrides) -> FranceTravailClient:
     return FranceTravailClient(
         client_id="fake-client-id",
         client_secret="fake-client-secret",
@@ -12,6 +12,7 @@ def _client_with_transport(transport: httpx.MockTransport) -> FranceTravailClien
         token_url="https://example.test/token",
         api_base_url="https://example.test/api",
         http_client=httpx.Client(transport=transport),
+        **overrides,
     )
 
 
@@ -83,6 +84,7 @@ def test_search_offers_sends_expected_query_params() -> None:
         distance=20,
         type_contrat="CDI",
         min_creation_date="2026-04-01T00:00:00Z",
+        max_creation_date="2026-04-30T23:59:59Z",
         range_value="0-49",
     )
 
@@ -92,6 +94,7 @@ def test_search_offers_sends_expected_query_params() -> None:
         "distance": "20",
         "typeContrat": "CDI",
         "minCreationDate": "2026-04-01T00:00:00Z",
+        "maxCreationDate": "2026-04-30T23:59:59Z",
         "range": "0-49",
     }
 
@@ -123,6 +126,47 @@ def test_search_offers_returns_resultats() -> None:
     assert client.search_offers("wordpress") == [{"id": "A1"}, {"id": "B2"}]
 
 
+def test_search_offers_returns_empty_list_on_no_content() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "abc123", "token_type": "Bearer"})
+        return httpx.Response(204)
+
+    client = _client_with_transport(httpx.MockTransport(handler))
+
+    assert client.search_offers("wordpress") == []
+
+
+def test_search_offers_returns_empty_list_on_empty_body() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "abc123", "token_type": "Bearer"})
+        return httpx.Response(200, content=b"", headers={"Content-Type": "text/plain"})
+
+    client = _client_with_transport(httpx.MockTransport(handler))
+
+    assert client.search_offers("wordpress") == []
+
+
+def test_search_offers_raises_clear_error_on_non_json_text_body() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "abc123", "token_type": "Bearer"})
+        return httpx.Response(
+            200,
+            text="Service momentanement indisponible",
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+
+    client = _client_with_transport(httpx.MockTransport(handler))
+
+    with pytest.raises(
+        FranceTravailClientError,
+        match="status=200, content-type=text/html; charset=utf-8, body=Service momentanement indisponible",
+    ):
+        client.search_offers("wordpress")
+
+
 def test_search_offers_returns_empty_list_when_resultats_missing() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/token":
@@ -145,3 +189,47 @@ def test_search_offers_raises_clear_error_on_http_error(status_code: int) -> Non
 
     with pytest.raises(FranceTravailClientError, match=f"Erreur HTTP {status_code}"):
         client.search_offers("wordpress")
+
+
+def test_search_offers_retries_rate_limit_with_retry_after() -> None:
+    search_calls = 0
+    sleep_calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal search_calls
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "abc123", "token_type": "Bearer"})
+        search_calls += 1
+        if search_calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "2"})
+        return httpx.Response(200, json={"resultats": [{"id": "A1"}]})
+
+    client = _client_with_transport(
+        httpx.MockTransport(handler),
+        max_retries=2,
+        sleep_func=sleep_calls.append,
+    )
+
+    assert client.search_offers("wordpress") == [{"id": "A1"}]
+    assert search_calls == 2
+    assert sleep_calls == [2.0]
+
+
+def test_search_offers_raises_clear_error_when_rate_limit_persists() -> None:
+    sleep_calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "abc123", "token_type": "Bearer"})
+        return httpx.Response(429, text="Too many requests")
+
+    client = _client_with_transport(
+        httpx.MockTransport(handler),
+        max_retries=1,
+        retry_delay_seconds=0.5,
+        sleep_func=sleep_calls.append,
+    )
+
+    with pytest.raises(FranceTravailClientError, match="l'API France Travail limite les requetes"):
+        client.search_offers("wordpress")
+    assert sleep_calls == [0.5]

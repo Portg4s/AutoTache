@@ -53,6 +53,8 @@ def summarize_config(config: AppConfig) -> str:
             f"- Jours analyses: {config.days_back}",
             f"- Stage autorise: {'oui' if config.allow_internship else 'non'}",
             f"- Alternance autorisee: {'oui' if config.allow_apprenticeship else 'non'}",
+            f"- Delai API: {config.api.request_delay_seconds} s",
+            f"- Retries API: {config.api.max_retries}",
             f"- Termes inclus: {len(config.filters.include_terms)}",
             f"- Termes exclus: {len(config.filters.exclude_terms)}",
         ]

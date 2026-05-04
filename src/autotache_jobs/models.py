@@ -19,6 +19,13 @@ class ConfigFilters(BaseModel):
         return [value.strip() for value in values if value and value.strip()]
 
 
+class ApiConfig(BaseModel):
+    """API pacing settings loaded from the local config file."""
+
+    request_delay_seconds: float = Field(default=0.8, ge=0)
+    max_retries: int = Field(default=3, ge=0)
+
+
 class AppConfig(BaseModel):
     """Validated local application configuration."""
 
@@ -29,6 +36,7 @@ class AppConfig(BaseModel):
     days_back: int = Field(gt=0)
     allow_internship: bool = False
     allow_apprenticeship: bool = False
+    api: ApiConfig = Field(default_factory=ApiConfig)
     filters: ConfigFilters = Field(default_factory=ConfigFilters)
 
     @field_validator("keywords", "communes", "contract_types")

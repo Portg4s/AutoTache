@@ -10,7 +10,7 @@ import httpx
 from ..filters import is_relevant_offer
 from ..parsers import extract_technologies, parse_salary, parse_teletravail
 from ..scoring import score_offer
-from .base import JobSource, SourceResult
+from .base import JobSource, SourceResult, SourceStats
 
 
 DEFAULT_ARBEITNOW_ENDPOINT = "https://www.arbeitnow.com/api/job-board-api"
@@ -29,24 +29,48 @@ class ArbeitnowSource(JobSource):
         self,
         endpoint_url: str = DEFAULT_ARBEITNOW_ENDPOINT,
         max_pages: int = 1,
+        keywords: list[str] | None = None,
+        allowed_locations: list[str] | None = None,
         timeout: float = 30.0,
         http_client: httpx.Client | None = None,
     ) -> None:
         self.endpoint_url = endpoint_url
         self.max_pages = max(max_pages, 1)
+        self.keywords = _clean_terms(keywords or [])
+        self.allowed_locations = _clean_terms(allowed_locations or [])
         self.timeout = timeout
         self._http_client = http_client or httpx.Client(timeout=timeout)
 
     def collect(self) -> SourceResult:
-        raw_offers = self.collect_raw_offers()
+        fetched_offers = self.collect_fetched_offers()
+        raw_offers = filter_raw_offers(
+            fetched_offers,
+            keywords=self.keywords,
+            allowed_locations=self.allowed_locations,
+        )
         return SourceResult(
             source_name=self.name,
             raw_offers=raw_offers,
             normalized_offers=[normalize_arbeitnow_offer(raw_offer) for raw_offer in raw_offers],
+            stats=SourceStats(
+                enabled=True,
+                fetched=len(fetched_offers),
+                kept=len(raw_offers),
+                filtered=len(fetched_offers) - len(raw_offers),
+            ),
         )
 
     def collect_raw_offers(self) -> list[dict]:
-        """Collect raw Arbeitnow offers from one or more paginated API pages."""
+        """Collect raw Arbeitnow offers after applying local source filters."""
+
+        return filter_raw_offers(
+            self.collect_fetched_offers(),
+            keywords=self.keywords,
+            allowed_locations=self.allowed_locations,
+        )
+
+    def collect_fetched_offers(self) -> list[dict]:
+        """Collect raw Arbeitnow offers from one or more paginated API pages before filters."""
 
         offers: list[dict] = []
         next_url: str | None = self.endpoint_url
@@ -65,6 +89,44 @@ class ArbeitnowSource(JobSource):
             next_url = _next_page_url(payload)
 
         return offers
+
+
+def filter_raw_offers(
+    raw_offers: list[dict],
+    keywords: list[str] | None = None,
+    allowed_locations: list[str] | None = None,
+) -> list[dict]:
+    """Return Arbeitnow offers matching optional local source filters."""
+
+    keyword_terms = _clean_terms(keywords or [])
+    location_terms = _clean_terms(allowed_locations or [])
+    return [
+        offer
+        for offer in raw_offers
+        if matches_keywords(offer, keyword_terms) and matches_allowed_locations(offer, location_terms)
+    ]
+
+
+def matches_keywords(raw_offer: dict, keywords: list[str] | None = None) -> bool:
+    """Return true when an Arbeitnow offer matches at least one configured keyword."""
+
+    terms = _clean_terms(keywords or [])
+    if not terms:
+        return True
+
+    text = _normalize_filter_text(_offer_search_text(raw_offer))
+    return any(_normalize_filter_text(term) in text for term in terms)
+
+
+def matches_allowed_locations(raw_offer: dict, allowed_locations: list[str] | None = None) -> bool:
+    """Return true when an Arbeitnow offer location matches the configured allow-list."""
+
+    terms = _clean_terms(allowed_locations or [])
+    if not terms:
+        return True
+
+    location = _normalize_filter_text(raw_offer.get("location"))
+    return any(_normalize_filter_text(term) in location for term in terms)
 
 
 def normalize_arbeitnow_offer(raw_offer: dict) -> dict[str, Any]:
@@ -170,6 +232,27 @@ def _values_text(value: Any) -> str:
     if isinstance(value, list):
         return " ".join(_clean(item) for item in value if _clean(item))
     return _clean(value)
+
+
+def _offer_search_text(raw_offer: dict) -> str:
+    return " ".join(
+        value
+        for value in (
+            _clean(raw_offer.get("title")),
+            _clean(raw_offer.get("description")),
+            _values_text(raw_offer.get("tags")),
+            _values_text(raw_offer.get("job_types")),
+        )
+        if value
+    )
+
+
+def _clean_terms(values: list[str]) -> list[str]:
+    return [value.strip() for value in values if value and value.strip()]
+
+
+def _normalize_filter_text(value: Any) -> str:
+    return _clean(value).casefold()
 
 
 def _clean(value: Any) -> str:

@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"- Offres normalisees uniques: {summary['total_unique_normalized']}")
     print(f"- Offres pertinentes: {summary['total_relevant']}")
     print(f"- Nouvelles offres exportees: {summary['total_new']}")
+    _print_source_stats(summary.get("source_stats", {}))
     print(f"- Export CSV principal: {summary['export_path'] or 'aucun'}")
     print(f"- Export Excel principal: {summary['xlsx_export_path'] or 'aucun'}")
     print(f"- Export CSV debug: {summary['debug_export_path'] or 'aucun'}")
@@ -82,6 +83,21 @@ def _print_debug_offers(offers: list[dict[str, Any]]) -> None:
         print(f"- score_reason: {_format_debug_value(offer.get('score_reason'))}")
         print(f"- score_details: {_format_score_details(offer.get('score_details'))}")
         print(f"- url_offre: {_format_debug_value(offer.get('url_offre'))}")
+
+
+def _print_source_stats(source_stats: dict[str, dict[str, Any]]) -> None:
+    print("Sources :")
+    if not source_stats:
+        print("- aucune source renseignee")
+        return
+
+    for source_name, stats in source_stats.items():
+        print(
+            f"- {source_name} : active {'oui' if stats.get('enabled') else 'non'}, "
+            f"recuperees {stats.get('fetched', 0)}, "
+            f"conservees {stats.get('kept', 0)}, "
+            f"filtrees {stats.get('filtered', 0)}"
+        )
 
 
 def _format_debug_value(value: Any) -> str:

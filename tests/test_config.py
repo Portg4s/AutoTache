@@ -88,6 +88,13 @@ sources:
   arbeitnow:
     enabled: true
     max_pages: 2
+    keywords:
+      - frontend
+      - " "
+      - wordpress
+    allowed_locations:
+      - France
+      - Remote
 """,
         encoding="utf-8",
     )
@@ -98,6 +105,10 @@ sources:
     assert config.sources.france_travail.enabled is False
     assert config.sources.arbeitnow.enabled is True
     assert config.sources.arbeitnow.max_pages == 2
+    assert config.sources.arbeitnow.keywords == ["frontend", "wordpress"]
+    assert config.sources.arbeitnow.allowed_locations == ["France", "Remote"]
     assert "- Source France Travail activee: non" in summary
     assert "- Source Arbeitnow activee: oui" in summary
     assert "- Pages max Arbeitnow: 2" in summary
+    assert "- Keywords Arbeitnow: 2" in summary
+    assert "- Localisations Arbeitnow: 2" in summary

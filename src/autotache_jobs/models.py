@@ -44,6 +44,13 @@ class ArbeitnowSourceConfig(BaseModel):
 
     enabled: bool = False
     max_pages: int = Field(default=1, ge=1)
+    keywords: list[str] = Field(default_factory=list)
+    allowed_locations: list[str] = Field(default_factory=list)
+
+    @field_validator("keywords", "allowed_locations")
+    @classmethod
+    def clean_terms(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value and value.strip()]
 
 
 class SourcesConfig(BaseModel):

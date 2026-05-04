@@ -12,7 +12,7 @@ from .france_travail_client import FranceTravailClient
 from .notifications import send_discord_summary
 from .scoring import DECISION_RELEVANT, DECISION_REVIEW, score_offer
 from .sources.arbeitnow import ArbeitnowSource
-from .sources.base import SourceResult
+from .sources.base import SourceResult, SourceStats
 from .sources.france_travail import FranceTravailSource
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
 
@@ -80,6 +80,7 @@ def run_job_search(
         "best_score": _best_score(unique_normalized_offers),
         "sources_enabled": _enabled_source_names(config),
         "source_counts": _source_counts(source_results),
+        "source_stats": _source_stats(config, source_results),
         "source_status": "collected" if source_results else "no_sources_enabled",
         "discord_enabled": bool(config.notifications.discord_enabled),
         "discord_sent": False,
@@ -116,6 +117,8 @@ def _collect_source_results(
         source_results.append(
             ArbeitnowSource(
                 max_pages=config.sources.arbeitnow.max_pages,
+                keywords=config.sources.arbeitnow.keywords,
+                allowed_locations=config.sources.arbeitnow.allowed_locations,
                 http_client=arbeitnow_client,
             ).collect()
         )
@@ -189,6 +192,25 @@ def _source_counts(source_results: list[SourceResult]) -> dict[str, dict[str, in
             "normalized": len(result.normalized_offers),
         }
         for result in source_results
+    }
+
+
+def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, dict[str, int | bool]]:
+    stats = {
+        "France Travail": _stats_dict(SourceStats(enabled=bool(config.sources.france_travail.enabled), fetched=0, kept=0, filtered=0)),
+        "Arbeitnow": _stats_dict(SourceStats(enabled=bool(config.sources.arbeitnow.enabled), fetched=0, kept=0, filtered=0)),
+    }
+    for result in source_results:
+        stats[result.source_name] = _stats_dict(result.stats)
+    return stats
+
+
+def _stats_dict(stats: SourceStats) -> dict[str, int | bool]:
+    return {
+        "enabled": stats.enabled,
+        "fetched": stats.fetched,
+        "kept": stats.kept,
+        "filtered": stats.filtered,
     }
 
 

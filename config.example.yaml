@@ -46,6 +46,17 @@ sources:
   arbeitnow:
     enabled: false
     max_pages: 1
+    keywords:
+      - frontend
+      - front-end
+      - wordpress
+      - ui
+      - ux
+      - web designer
+      - figma
+    allowed_locations:
+      - France
+      - Remote
 
 notifications:
   discord_enabled: false

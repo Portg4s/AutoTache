@@ -543,6 +543,18 @@ def test_runner_default_uses_france_travail_and_not_arbeitnow(tmp_path: Path) ->
     assert summary["total_raw"] == 1
     assert summary["sources_enabled"] == ["France Travail"]
     assert summary["source_counts"] == {"France Travail": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert summary["source_stats"]["Arbeitnow"] == {
+        "enabled": False,
+        "fetched": 0,
+        "kept": 0,
+        "filtered": 0,
+    }
 
 
 def test_runner_can_use_arbeitnow_when_france_travail_disabled(tmp_path: Path) -> None:
@@ -562,6 +574,13 @@ def test_runner_can_use_arbeitnow_when_france_travail_disabled(tmp_path: Path) -
     assert summary["total_relevant"] == 1
     assert summary["sources_enabled"] == ["Arbeitnow"]
     assert summary["source_counts"] == {"Arbeitnow": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["enabled"] is False
+    assert summary["source_stats"]["Arbeitnow"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
 
 
 def test_runner_merges_france_travail_and_arbeitnow_sources(tmp_path: Path) -> None:
@@ -586,7 +605,55 @@ def test_runner_merges_france_travail_and_arbeitnow_sources(tmp_path: Path) -> N
         "France Travail": {"raw": 1, "normalized": 1},
         "Arbeitnow": {"raw": 1, "normalized": 1},
     }
+    assert summary["source_stats"]["France Travail"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert summary["source_stats"]["Arbeitnow"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
     assert {offer["source"] for offer in summary["debug_offers"]} == {"France Travail", "Arbeitnow"}
+
+
+def test_runner_exposes_arbeitnow_filtered_source_stats(tmp_path: Path) -> None:
+    kept = _arbeitnow_offer("kept")
+    rejected_keyword = _arbeitnow_offer("keyword-rejected")
+    rejected_keyword["title"] = "Sales Manager"
+    rejected_keyword["description"] = "Sales partnerships."
+    rejected_location = _arbeitnow_offer("location-rejected")
+    rejected_location["location"] = "Berlin"
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": False},
+                "arbeitnow": {
+                    "enabled": True,
+                    "max_pages": 1,
+                    "keywords": ["frontend"],
+                    "allowed_locations": ["remote"],
+                },
+            }
+        ),
+        _env(),
+        client=FakeFranceTravailClient([[]]),
+        arbeitnow_client=_arbeitnow_client([kept, rejected_keyword, rejected_location]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["total_raw"] == 1
+    assert summary["source_stats"]["Arbeitnow"] == {
+        "enabled": True,
+        "fetched": 3,
+        "kept": 1,
+        "filtered": 2,
+    }
 
 
 def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> None:
@@ -606,6 +673,10 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
     assert summary["source_status"] == "no_sources_enabled"
     assert summary["sources_enabled"] == []
     assert summary["source_counts"] == {}
+    assert summary["source_stats"] == {
+        "France Travail": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+        "Arbeitnow": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+    }
     assert summary["total_raw"] == 0
     assert summary["total_normalized"] == 0
     assert summary["total_relevant"] == 0

@@ -7,12 +7,23 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class SourceStats:
+    """Collection stats for one offer source."""
+
+    enabled: bool
+    fetched: int
+    kept: int
+    filtered: int
+
+
+@dataclass(frozen=True)
 class SourceResult:
     """Offers collected from one source before and after normalization."""
 
     source_name: str
     raw_offers: list[dict]
     normalized_offers: list[dict]
+    stats: SourceStats
 
 
 class JobSource(ABC):

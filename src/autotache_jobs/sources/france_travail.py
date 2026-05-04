@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from ..normalizer import normalize_france_travail_offer
-from .base import JobSource, SourceResult
+from .base import JobSource, SourceResult, SourceStats
 
 
 class FranceTravailSource(JobSource):
@@ -34,6 +34,12 @@ class FranceTravailSource(JobSource):
             source_name=self.name,
             raw_offers=raw_offers,
             normalized_offers=normalized_offers,
+            stats=SourceStats(
+                enabled=True,
+                fetched=len(raw_offers),
+                kept=len(raw_offers),
+                filtered=0,
+            ),
         )
 
     def collect_raw_offers(self) -> list[dict]:

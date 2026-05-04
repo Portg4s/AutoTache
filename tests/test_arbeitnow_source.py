@@ -1,7 +1,14 @@
 import httpx
 import pytest
 
-from autotache_jobs.sources.arbeitnow import ArbeitnowSource, ArbeitnowSourceError, normalize_arbeitnow_offer
+from autotache_jobs.sources.arbeitnow import (
+    ArbeitnowSource,
+    ArbeitnowSourceError,
+    filter_raw_offers,
+    matches_allowed_locations,
+    matches_keywords,
+    normalize_arbeitnow_offer,
+)
 
 
 def _source_with_transport(transport: httpx.MockTransport, **overrides) -> ArbeitnowSource:
@@ -146,6 +153,120 @@ def test_collect_adds_normalization_and_scoring_without_real_network() -> None:
     assert result.source_name == "Arbeitnow"
     assert len(result.raw_offers) == 1
     assert len(result.normalized_offers) == 1
+    assert result.stats.enabled is True
+    assert result.stats.fetched == 1
+    assert result.stats.kept == 1
+    assert result.stats.filtered == 0
     assert isinstance(result.normalized_offers[0]["score_total"], int)
     assert result.normalized_offers[0]["score_reason"]
     assert isinstance(result.normalized_offers[0]["score_details"], dict)
+
+
+def test_arbeitnow_filter_keeps_offer_when_keyword_matches_title() -> None:
+    assert matches_keywords(_frontend_offer(title="Senior Frontend Engineer"), ["frontend"]) is True
+
+
+def test_arbeitnow_filter_keeps_offer_when_keyword_matches_description() -> None:
+    offer = _frontend_offer(title="Product Designer", description="Design web interfaces with Figma.")
+
+    assert matches_keywords(offer, ["figma"]) is True
+
+
+def test_arbeitnow_filter_keeps_offer_when_keyword_matches_tags() -> None:
+    offer = _frontend_offer(title="Designer", description="Create interfaces.", tags=["UI", "UX"])
+
+    assert matches_keywords(offer, ["ux"]) is True
+
+
+def test_arbeitnow_filter_rejects_offer_when_no_keyword_matches() -> None:
+    offer = _frontend_offer(title="Account Manager", description="Sales and partnerships.", tags=["sales"])
+
+    assert matches_keywords(offer, ["wordpress", "frontend"]) is False
+    assert filter_raw_offers([offer], keywords=["wordpress", "frontend"]) == []
+
+
+def test_arbeitnow_filter_keeps_offer_when_location_contains_france() -> None:
+    offer = _frontend_offer(location="Paris, France")
+
+    assert matches_allowed_locations(offer, ["France"]) is True
+
+
+def test_arbeitnow_filter_keeps_offer_when_location_contains_remote() -> None:
+    offer = _frontend_offer(location="Remote")
+
+    assert matches_allowed_locations(offer, ["Remote"]) is True
+
+
+def test_arbeitnow_filter_rejects_offer_when_location_does_not_match_allowed_locations() -> None:
+    offer = _frontend_offer(location="Berlin, Germany")
+
+    assert matches_allowed_locations(offer, ["France", "Remote"]) is False
+    assert filter_raw_offers([offer], allowed_locations=["France", "Remote"]) == []
+
+
+def test_arbeitnow_filter_does_not_filter_when_keywords_empty() -> None:
+    offer = _frontend_offer(title="Account Manager", description="Sales and partnerships.", tags=[])
+
+    assert matches_keywords(offer, []) is True
+    assert filter_raw_offers([offer], keywords=[]) == [offer]
+
+
+def test_arbeitnow_filter_does_not_filter_when_allowed_locations_empty() -> None:
+    offer = _frontend_offer(location="Berlin, Germany")
+
+    assert matches_allowed_locations(offer, []) is True
+    assert filter_raw_offers([offer], allowed_locations=[]) == [offer]
+
+
+def test_collect_raw_offers_applies_arbeitnow_filters_without_real_network() -> None:
+    kept = _frontend_offer(slug="kept", title="Frontend Developer", location="Remote")
+    rejected_keyword = _frontend_offer(slug="keyword-rejected", title="Sales Manager", description="Sales.", location="Remote")
+    rejected_location = _frontend_offer(slug="location-rejected", title="Frontend Developer", location="Berlin")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [kept, rejected_keyword, rejected_location],
+                "links": {"next": None},
+                "meta": {},
+            },
+        )
+
+    source = _source_with_transport(
+        httpx.MockTransport(handler),
+        keywords=["frontend"],
+        allowed_locations=["remote"],
+    )
+
+    assert source.collect_raw_offers() == [kept]
+
+
+def test_collect_returns_arbeitnow_stats_before_and_after_filters_without_real_network() -> None:
+    kept = _frontend_offer(slug="kept", title="Frontend Developer", location="Remote")
+    rejected_keyword = _frontend_offer(slug="keyword-rejected", title="Sales Manager", description="Sales.", location="Remote")
+    rejected_location = _frontend_offer(slug="location-rejected", title="Frontend Developer", location="Berlin")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [kept, rejected_keyword, rejected_location],
+                "links": {"next": None},
+                "meta": {},
+            },
+        )
+
+    source = _source_with_transport(
+        httpx.MockTransport(handler),
+        keywords=["frontend"],
+        allowed_locations=["remote"],
+    )
+
+    result = source.collect()
+
+    assert result.raw_offers == [kept]
+    assert result.stats.enabled is True
+    assert result.stats.fetched == 3
+    assert result.stats.kept == 1
+    assert result.stats.filtered == 2

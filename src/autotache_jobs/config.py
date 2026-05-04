@@ -58,6 +58,8 @@ def summarize_config(config: AppConfig) -> str:
             f"- Source France Travail activee: {'oui' if config.sources.france_travail.enabled else 'non'}",
             f"- Source Arbeitnow activee: {'oui' if config.sources.arbeitnow.enabled else 'non'}",
             f"- Pages max Arbeitnow: {config.sources.arbeitnow.max_pages}",
+            f"- Keywords Arbeitnow: {len(config.sources.arbeitnow.keywords)}",
+            f"- Localisations Arbeitnow: {len(config.sources.arbeitnow.allowed_locations)}",
             f"- Discord active: {'oui' if config.notifications.discord_enabled else 'non'}",
             f"- Notification sans resultat: {'oui' if config.notifications.notify_when_no_results else 'non'}",
             f"- Termes inclus: {len(config.filters.include_terms)}",

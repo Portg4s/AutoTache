@@ -44,6 +44,12 @@ filters:
     assert config.sources.arbeitnow.max_pages == 1
     assert config.sources.remotive.enabled is False
     assert config.sources.remotive.keywords == []
+    assert config.sources.adzuna.enabled is False
+    assert config.sources.adzuna.country == "fr"
+    assert config.sources.adzuna.max_pages == 1
+    assert config.sources.adzuna.results_per_page == 20
+    assert config.sources.adzuna.keywords == []
+    assert config.sources.adzuna.location == ""
     assert "Configuration chargee avec succes." in summarize_config(config)
 
 
@@ -103,6 +109,16 @@ sources:
       - figma
       - " "
       - frontend
+  adzuna:
+    enabled: true
+    country: fr
+    max_pages: 3
+    results_per_page: 15
+    keywords:
+      - wordpress
+      - " "
+      - frontend
+    location: Dijon
 """,
         encoding="utf-8",
     )
@@ -117,6 +133,12 @@ sources:
     assert config.sources.arbeitnow.allowed_locations == ["France", "Remote"]
     assert config.sources.remotive.enabled is True
     assert config.sources.remotive.keywords == ["figma", "frontend"]
+    assert config.sources.adzuna.enabled is True
+    assert config.sources.adzuna.country == "fr"
+    assert config.sources.adzuna.max_pages == 3
+    assert config.sources.adzuna.results_per_page == 15
+    assert config.sources.adzuna.keywords == ["wordpress", "frontend"]
+    assert config.sources.adzuna.location == "Dijon"
     assert "- Source France Travail activee: non" in summary
     assert "- Source Arbeitnow activee: oui" in summary
     assert "- Pages max Arbeitnow: 2" in summary
@@ -124,3 +146,9 @@ sources:
     assert "- Localisations Arbeitnow: 2" in summary
     assert "- Source Remotive activee: oui" in summary
     assert "- Keywords Remotive: 2" in summary
+    assert "- Source Adzuna activee: oui" in summary
+    assert "- Pays Adzuna: fr" in summary
+    assert "- Pages max Adzuna: 3" in summary
+    assert "- Resultats par page Adzuna: 15" in summary
+    assert "- Keywords Adzuna: 2" in summary
+    assert "- Location Adzuna: Dijon" in summary

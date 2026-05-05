@@ -11,6 +11,7 @@ from .exporter import export_offers_to_csv, export_offers_to_tracking_xlsx, expo
 from .france_travail_client import FranceTravailClient
 from .notifications import send_discord_summary
 from .scoring import DECISION_RELEVANT, DECISION_REVIEW, score_offer
+from .sources.adzuna import AdzunaSource
 from .sources.arbeitnow import ArbeitnowSource
 from .sources.base import SourceResult, SourceStats
 from .sources.france_travail import FranceTravailSource
@@ -29,6 +30,7 @@ def run_job_search(
     discord_sender: Any = send_discord_summary,
     arbeitnow_client: Any | None = None,
     remotive_client: Any | None = None,
+    adzuna_client: Any | None = None,
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
@@ -38,6 +40,7 @@ def run_job_search(
         france_travail_client=client,
         arbeitnow_client=arbeitnow_client,
         remotive_client=remotive_client,
+        adzuna_client=adzuna_client,
         sleep_func=sleep_func,
     )
     raw_offers = [offer for result in source_results for offer in result.raw_offers]
@@ -106,6 +109,7 @@ def _collect_source_results(
     france_travail_client: Any | None = None,
     arbeitnow_client: Any | None = None,
     remotive_client: Any | None = None,
+    adzuna_client: Any | None = None,
     sleep_func: Any = time.sleep,
 ) -> list[SourceResult]:
     source_results: list[SourceResult] = []
@@ -136,6 +140,21 @@ def _collect_source_results(
             RemotiveSource(
                 keywords=config.sources.remotive.keywords,
                 http_client=remotive_client,
+            ).collect()
+        )
+
+    if config.sources.adzuna.enabled:
+        app_id, app_key = _adzuna_credentials(env_settings)
+        source_results.append(
+            AdzunaSource(
+                app_id=app_id,
+                app_key=app_key,
+                country=config.sources.adzuna.country,
+                max_pages=config.sources.adzuna.max_pages,
+                results_per_page=config.sources.adzuna.results_per_page,
+                keywords=config.sources.adzuna.keywords,
+                location=config.sources.adzuna.location,
+                http_client=adzuna_client,
             ).collect()
         )
 
@@ -200,6 +219,8 @@ def _enabled_source_names(config: Any) -> list[str]:
         enabled.append("Arbeitnow")
     if config.sources.remotive.enabled:
         enabled.append("Remotive")
+    if config.sources.adzuna.enabled:
+        enabled.append("Adzuna")
     return enabled
 
 
@@ -218,10 +239,19 @@ def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, 
         "France Travail": _stats_dict(SourceStats(enabled=bool(config.sources.france_travail.enabled), fetched=0, kept=0, filtered=0)),
         "Arbeitnow": _stats_dict(SourceStats(enabled=bool(config.sources.arbeitnow.enabled), fetched=0, kept=0, filtered=0)),
         "Remotive": _stats_dict(SourceStats(enabled=bool(config.sources.remotive.enabled), fetched=0, kept=0, filtered=0)),
+        "Adzuna": _stats_dict(SourceStats(enabled=bool(config.sources.adzuna.enabled), fetched=0, kept=0, filtered=0)),
     }
     for result in source_results:
         stats[result.source_name] = _stats_dict(result.stats)
     return stats
+
+
+def _adzuna_credentials(env_settings: Any) -> tuple[str, str]:
+    app_id = str(getattr(env_settings, "adzuna_app_id", "") or "").strip()
+    app_key = str(getattr(env_settings, "adzuna_app_key", "") or "").strip()
+    if not app_id or not app_key:
+        raise RuntimeError("Identifiants Adzuna manquants ou invalides dans l'environnement local.")
+    return app_id, app_key
 
 
 def _stats_dict(stats: SourceStats) -> dict[str, int | bool]:

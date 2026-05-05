@@ -65,12 +65,34 @@ class RemotiveSourceConfig(BaseModel):
         return [value.strip() for value in values if value and value.strip()]
 
 
+class AdzunaSourceConfig(BaseModel):
+    """Adzuna source settings."""
+
+    enabled: bool = False
+    country: str = "fr"
+    max_pages: int = Field(default=1, ge=1)
+    results_per_page: int = Field(default=20, ge=1)
+    keywords: list[str] = Field(default_factory=list)
+    location: str = ""
+
+    @field_validator("keywords")
+    @classmethod
+    def clean_terms(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value and value.strip()]
+
+    @field_validator("country", "location")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return value.strip() if value else ""
+
+
 class SourcesConfig(BaseModel):
     """Offer sources loaded from the local config file."""
 
     france_travail: SourceToggleConfig = Field(default_factory=SourceToggleConfig)
     arbeitnow: ArbeitnowSourceConfig = Field(default_factory=ArbeitnowSourceConfig)
     remotive: RemotiveSourceConfig = Field(default_factory=RemotiveSourceConfig)
+    adzuna: AdzunaSourceConfig = Field(default_factory=AdzunaSourceConfig)
 
 
 class AppConfig(BaseModel):
@@ -106,6 +128,8 @@ class FranceTravailEnv(BaseModel):
     token_url: str = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
     api_base_url: str = "https://api.francetravail.io/partenaire/offresdemploi/v2"
     discord_webhook_url: str = ""
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
 
     @field_validator("client_id", "client_secret")
     @classmethod
@@ -114,7 +138,7 @@ class FranceTravailEnv(BaseModel):
             raise ValueError("valeur requise")
         return value.strip()
 
-    @field_validator("discord_webhook_url")
+    @field_validator("discord_webhook_url", "adzuna_app_id", "adzuna_app_key")
     @classmethod
     def clean_optional_secret(cls, value: str) -> str:
         return value.strip() if value else ""

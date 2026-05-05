@@ -36,6 +36,8 @@ def load_france_travail_env(env_path: Path = Path(".env")) -> FranceTravailEnv:
             "https://api.francetravail.io/partenaire/offresdemploi/v2",
         ),
         "discord_webhook_url": os.getenv("DISCORD_WEBHOOK_URL", ""),
+        "adzuna_app_id": os.getenv("ADZUNA_APP_ID", ""),
+        "adzuna_app_key": os.getenv("ADZUNA_APP_KEY", ""),
     }
 
     try:

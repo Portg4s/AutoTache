@@ -65,6 +65,20 @@ sources:
       - ux
       - web designer
       - figma
+  adzuna:
+    enabled: false
+    country: fr
+    max_pages: 1
+    results_per_page: 20
+    keywords:
+      - frontend
+      - front-end
+      - wordpress
+      - ui
+      - ux
+      - web designer
+      - figma
+    location: ""
 
 notifications:
   discord_enabled: false

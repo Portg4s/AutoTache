@@ -45,6 +45,8 @@ def _env(**overrides) -> FranceTravailEnv:
         "scope": "fake-scope",
         "token_url": "https://example.test/token",
         "api_base_url": "https://example.test/api",
+        "adzuna_app_id": "fake-adzuna-id",
+        "adzuna_app_key": "fake-adzuna-key",
     }
     values.update(overrides)
     return FranceTravailEnv(
@@ -108,6 +110,22 @@ def _remotive_offer(offer_id: str = "remotive-front") -> dict:
     }
 
 
+def _adzuna_offer(offer_id: str = "adzuna-front") -> dict:
+    return {
+        "id": offer_id,
+        "title": "Frontend Developer WordPress",
+        "description": (
+            "Build WordPress interfaces with Elementor, HTML, CSS and JavaScript. "
+            "Remote work possible."
+        ),
+        "company": {"display_name": "Remote Studio"},
+        "location": {"display_name": "Paris, France", "area": ["France", "Paris"]},
+        "category": {"label": "IT Jobs"},
+        "contract_type": "permanent",
+        "redirect_url": f"https://www.adzuna.fr/details/{offer_id}",
+    }
+
+
 def _arbeitnow_client(raw_offers: list[dict]) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": raw_offers, "links": {"next": None}, "meta": {}})
@@ -120,6 +138,15 @@ def _remotive_client(raw_offers: list[dict], calls: list[str] | None = None) -> 
         if calls is not None:
             calls.append(str(request.url))
         return httpx.Response(200, json={"jobs": raw_offers})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _adzuna_client(raw_offers: list[dict], calls: list[str] | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(str(request.url))
+        return httpx.Response(200, json={"results": raw_offers})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -563,6 +590,7 @@ def test_runner_discord_no_relevant_offer_sends_when_configured(tmp_path: Path) 
 def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Path) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer()]])
     remotive_calls = []
+    adzuna_calls = []
 
     summary = run_job_search(
         _config(),
@@ -570,12 +598,14 @@ def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Pa
         client=client,
         arbeitnow_client=_arbeitnow_client([_arbeitnow_offer()]),
         remotive_client=_remotive_client([_remotive_offer()], calls=remotive_calls),
+        adzuna_client=_adzuna_client([_adzuna_offer()], calls=adzuna_calls),
         data_dir=tmp_path / "data",
         export_dir=tmp_path / "exports",
     )
 
     assert len(client.calls) == 1
     assert remotive_calls == []
+    assert adzuna_calls == []
     assert summary["total_raw"] == 1
     assert summary["sources_enabled"] == ["France Travail"]
     assert summary["source_counts"] == {"France Travail": {"raw": 1, "normalized": 1}}
@@ -592,6 +622,12 @@ def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Pa
         "filtered": 0,
     }
     assert summary["source_stats"]["Remotive"] == {
+        "enabled": False,
+        "fetched": 0,
+        "kept": 0,
+        "filtered": 0,
+    }
+    assert summary["source_stats"]["Adzuna"] == {
         "enabled": False,
         "fetched": 0,
         "kept": 0,
@@ -730,6 +766,120 @@ def test_runner_merges_france_travail_arbeitnow_and_remotive_sources(tmp_path: P
     assert {offer["source"] for offer in summary["debug_offers"]} == {"France Travail", "Arbeitnow", "Remotive"}
 
 
+def test_runner_can_use_adzuna_when_other_sources_disabled(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+    adzuna_calls = []
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": False},
+                "adzuna": {
+                    "enabled": True,
+                    "country": "fr",
+                    "max_pages": 1,
+                    "results_per_page": 20,
+                    "keywords": ["frontend"],
+                    "location": "Dijon",
+                },
+            }
+        ),
+        _env(),
+        client=client,
+        adzuna_client=_adzuna_client([_adzuna_offer("AZ1")], calls=adzuna_calls),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert client.calls == []
+    assert len(adzuna_calls) == 1
+    assert "https://api.adzuna.com/v1/api/jobs/fr/search/1" in adzuna_calls[0]
+    assert summary["total_raw"] == 1
+    assert summary["total_relevant"] == 1
+    assert summary["sources_enabled"] == ["Adzuna"]
+    assert summary["source_counts"] == {"Adzuna": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["enabled"] is False
+    assert summary["source_stats"]["Arbeitnow"]["enabled"] is False
+    assert summary["source_stats"]["Remotive"]["enabled"] is False
+    assert summary["source_stats"]["Adzuna"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+
+
+def test_runner_adzuna_enabled_without_credentials_raises_clear_error(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+    calls = []
+
+    try:
+        run_job_search(
+            _config(sources={"france_travail": {"enabled": False}, "adzuna": {"enabled": True}}),
+            _env(adzuna_app_id="", adzuna_app_key=""),
+            client=client,
+            adzuna_client=_adzuna_client([_adzuna_offer()], calls=calls),
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Adzuna activee sans identifiants devrait echouer.")
+
+    assert calls == []
+    assert "Identifiants Adzuna manquants" in message
+    assert "fake-adzuna" not in message
+    assert "ADZUNA_APP_ID" not in message
+    assert "ADZUNA_APP_KEY" not in message
+
+
+def test_runner_merges_all_sources_including_adzuna(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("FT1")]])
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+                "remotive": {"enabled": True, "keywords": ["frontend"]},
+                "adzuna": {"enabled": True, "keywords": ["frontend"]},
+            }
+        ),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        remotive_client=_remotive_client([_remotive_offer("RM1")]),
+        adzuna_client=_adzuna_client([_adzuna_offer("AZ1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert summary["total_raw"] == 4
+    assert summary["total_unique_normalized"] == 4
+    assert summary["total_relevant"] == 4
+    assert summary["sources_enabled"] == ["France Travail", "Arbeitnow", "Remotive", "Adzuna"]
+    assert summary["source_counts"] == {
+        "France Travail": {"raw": 1, "normalized": 1},
+        "Arbeitnow": {"raw": 1, "normalized": 1},
+        "Remotive": {"raw": 1, "normalized": 1},
+        "Adzuna": {"raw": 1, "normalized": 1},
+    }
+    assert summary["source_stats"]["Adzuna"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert {offer["source"] for offer in summary["debug_offers"]} == {
+        "France Travail",
+        "Arbeitnow",
+        "Remotive",
+        "Adzuna",
+    }
+
+
 def test_runner_exposes_arbeitnow_filtered_source_stats(tmp_path: Path) -> None:
     kept = _arbeitnow_offer("kept")
     rejected_keyword = _arbeitnow_offer("keyword-rejected")
@@ -787,6 +937,7 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
         "France Travail": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Arbeitnow": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Remotive": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+        "Adzuna": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
     }
     assert summary["total_raw"] == 0
     assert summary["total_normalized"] == 0

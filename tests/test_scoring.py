@@ -76,7 +76,8 @@ def test_devops_lead_is_rejected() -> None:
     )
 
     assert result["decision"] == "Rejeté"
-    assert result["score_details"]["eliminatory_reason"] == "devops pur"
+    assert result["score_details"]["eliminatory_reason"] is None
+    assert "devops" in result["score_details"]["penalties"]["matches"]
 
 
 def test_apprenticeship_javascript_developer_is_rejected() -> None:
@@ -113,7 +114,8 @@ def test_backend_only_node_python_is_rejected() -> None:
     )
 
     assert result["decision"] == "Rejeté"
-    assert result["score_details"]["eliminatory_reason"] == "backend pur"
+    assert result["score_details"]["eliminatory_reason"] is None
+    assert "backend pur" in result["score_details"]["penalties"]["matches"]
 
 
 def test_data_analyst_is_rejected() -> None:
@@ -123,11 +125,98 @@ def test_data_analyst_is_rejected() -> None:
     assert result["score_details"]["eliminatory_reason"] == "data pur"
 
 
-def test_it_support_is_rejected() -> None:
+def test_it_support_without_web_signals_is_rejected() -> None:
     result = score_offer({"titre": "Support informatique", "description": "Helpdesk utilisateurs."})
 
     assert result["decision"] == "Rejeté"
-    assert result["score_details"]["eliminatory_reason"] == "support informatique pur"
+    assert result["score_details"]["eliminatory_reason"] is None
+    assert "support informatique" in result["score_details"]["penalties"]["matches"]
+
+
+def test_it_support_with_web_signals_goes_to_review_when_score_is_enough() -> None:
+    result = score_offer(
+        {
+            "titre": "Support informatique WordPress",
+            "description": "Support de sites web avec interfaces HTML CSS JavaScript.",
+            "technologies": ["WordPress", "HTML", "CSS", "JavaScript"],
+        }
+    )
+
+    assert result["decision"] == "À vérifier"
+    assert result["score_total"] >= 45
+    assert result["score_details"]["eliminatory_reason"] is None
+
+
+def test_backend_with_front_signals_goes_to_review_when_score_is_enough() -> None:
+    result = score_offer(
+        {
+            "titre": "Developpeur front-end backend",
+            "description": "Creation d'interfaces React en HTML CSS JavaScript.",
+            "technologies": ["React", "HTML", "CSS", "JavaScript"],
+        }
+    )
+
+    assert result["decision"] == "À vérifier"
+    assert result["score_total"] >= 45
+    assert result["score_details"]["eliminatory_reason"] is None
+
+
+def test_devops_with_front_signals_goes_to_review_when_score_is_enough() -> None:
+    result = score_offer(
+        {
+            "titre": "Frontend DevOps",
+            "description": "Developpement d'interfaces WordPress HTML CSS JavaScript avec CI/CD.",
+            "technologies": ["WordPress", "HTML", "CSS", "JavaScript"],
+        }
+    )
+
+    assert result["decision"] == "À vérifier"
+    assert result["score_total"] >= 45
+    assert result["score_details"]["eliminatory_reason"] is None
+
+
+def test_web_project_manager_with_front_signals_goes_to_review() -> None:
+    result = score_offer(
+        {
+            "titre": "Chef de projet web WordPress",
+            "description": "Coordination de sites avec HTML CSS JavaScript et maquettes.",
+            "technologies": ["WordPress", "HTML", "CSS", "JavaScript"],
+        }
+    )
+
+    assert result["decision"] == "À vérifier"
+    assert result["score_total"] >= 45
+    assert result["score_details"]["eliminatory_reason"] is None
+
+
+def test_non_web_engineering_with_good_web_score_goes_to_review() -> None:
+    result = score_offer(
+        {
+            "titre": "Ingenieur qualite frontend",
+            "description": "Qualite d'interfaces WordPress HTML CSS JavaScript.",
+            "technologies": ["WordPress", "HTML", "CSS", "JavaScript"],
+            "type_contrat": "CDI",
+            "teletravail_mention": "Teletravail partiel",
+            "teletravail_jours": 2,
+        }
+    )
+
+    assert result["decision"] == "À vérifier"
+    assert result["score_total"] >= 45
+    assert result["score_details"]["eliminatory_reason"] is None
+
+
+def test_commercial_pure_offer_stays_rejected_even_with_web_signals() -> None:
+    result = score_offer(
+        {
+            "titre": "Commercial WordPress",
+            "description": "Vente de sites web HTML CSS JavaScript.",
+            "technologies": ["WordPress", "HTML", "CSS", "JavaScript"],
+        }
+    )
+
+    assert result["decision"] == "Rejeté"
+    assert result["score_details"]["eliminatory_reason"] == "commercial pur"
 
 
 def test_empty_offer_is_rejected_without_error() -> None:

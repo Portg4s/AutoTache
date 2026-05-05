@@ -7,13 +7,14 @@ from pathlib import Path
 import time
 from typing import Any
 
-from .exporter import export_offers_to_csv, export_offers_to_xlsx
+from .exporter import export_offers_to_csv, export_offers_to_tracking_xlsx, export_offers_to_xlsx
 from .france_travail_client import FranceTravailClient
 from .notifications import send_discord_summary
 from .scoring import DECISION_RELEVANT, DECISION_REVIEW, score_offer
 from .sources.arbeitnow import ArbeitnowSource
 from .sources.base import SourceResult, SourceStats
 from .sources.france_travail import FranceTravailSource
+from .sources.remotive import RemotiveSource
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
 
 
@@ -27,6 +28,7 @@ def run_job_search(
     sleep_func: Any = time.sleep,
     discord_sender: Any = send_discord_summary,
     arbeitnow_client: Any | None = None,
+    remotive_client: Any | None = None,
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
@@ -35,6 +37,7 @@ def run_job_search(
         env_settings,
         france_travail_client=client,
         arbeitnow_client=arbeitnow_client,
+        remotive_client=remotive_client,
         sleep_func=sleep_func,
     )
     raw_offers = [offer for result in source_results for offer in result.raw_offers]
@@ -47,13 +50,16 @@ def run_job_search(
     deduplicated_exportable_offers = _deduplicate_by_id(exportable_offers)
 
     seen_ids_path = Path(data_dir) / "seen_offer_ids.json"
+    main_export_dir = Path(export_dir) / "offres"
+    debug_export_dir = Path(export_dir) / "debug"
     seen_ids = load_seen_offer_ids(seen_ids_path)
     new_offers = filter_new_offers(deduplicated_exportable_offers, seen_ids)
-    export_path = export_offers_to_csv(new_offers, export_dir)
-    xlsx_export_path = export_offers_to_xlsx(new_offers, export_dir) if export_path else None
-    debug_export_path = _export_debug_offers(unique_normalized_offers, export_dir) if include_debug_offers else None
+    export_path = export_offers_to_csv(new_offers, main_export_dir)
+    xlsx_export_path = export_offers_to_xlsx(new_offers, main_export_dir) if export_path else None
+    tracking_xlsx_export_path = export_offers_to_tracking_xlsx(new_offers, main_export_dir)
+    debug_export_path = _export_debug_offers(unique_normalized_offers, debug_export_dir) if include_debug_offers else None
     debug_xlsx_export_path = (
-        _export_debug_offers_to_xlsx(unique_normalized_offers, export_dir)
+        _export_debug_offers_to_xlsx(unique_normalized_offers, debug_export_dir)
         if include_debug_offers and debug_export_path
         else None
     )
@@ -70,6 +76,7 @@ def run_job_search(
         "total_new": len(new_offers),
         "export_path": str(export_path) if export_path else None,
         "xlsx_export_path": str(xlsx_export_path) if xlsx_export_path else None,
+        "tracking_xlsx_export_path": str(tracking_xlsx_export_path) if tracking_xlsx_export_path else None,
         "debug_export_path": str(debug_export_path) if debug_export_path else None,
         "debug_xlsx_export_path": str(debug_xlsx_export_path) if debug_xlsx_export_path else None,
         "seen_ids_path": str(seen_ids_path),
@@ -98,6 +105,7 @@ def _collect_source_results(
     env_settings: Any,
     france_travail_client: Any | None = None,
     arbeitnow_client: Any | None = None,
+    remotive_client: Any | None = None,
     sleep_func: Any = time.sleep,
 ) -> list[SourceResult]:
     source_results: list[SourceResult] = []
@@ -120,6 +128,14 @@ def _collect_source_results(
                 keywords=config.sources.arbeitnow.keywords,
                 allowed_locations=config.sources.arbeitnow.allowed_locations,
                 http_client=arbeitnow_client,
+            ).collect()
+        )
+
+    if config.sources.remotive.enabled:
+        source_results.append(
+            RemotiveSource(
+                keywords=config.sources.remotive.keywords,
+                http_client=remotive_client,
             ).collect()
         )
 
@@ -182,6 +198,8 @@ def _enabled_source_names(config: Any) -> list[str]:
         enabled.append("France Travail")
     if config.sources.arbeitnow.enabled:
         enabled.append("Arbeitnow")
+    if config.sources.remotive.enabled:
+        enabled.append("Remotive")
     return enabled
 
 
@@ -199,6 +217,7 @@ def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, 
     stats = {
         "France Travail": _stats_dict(SourceStats(enabled=bool(config.sources.france_travail.enabled), fetched=0, kept=0, filtered=0)),
         "Arbeitnow": _stats_dict(SourceStats(enabled=bool(config.sources.arbeitnow.enabled), fetched=0, kept=0, filtered=0)),
+        "Remotive": _stats_dict(SourceStats(enabled=bool(config.sources.remotive.enabled), fetched=0, kept=0, filtered=0)),
     }
     for result in source_results:
         stats[result.source_name] = _stats_dict(result.stats)

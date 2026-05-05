@@ -10,6 +10,8 @@ __pycache__/
 data/*.json
 exports/*.csv
 exports/*.xlsx
+exports/**/*.csv
+exports/**/*.xlsx
 logs/*.log
 
 !.gitkeep

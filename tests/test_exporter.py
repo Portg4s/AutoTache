@@ -3,11 +3,16 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from autotache_jobs.exporter import CSV_COLUMNS, export_offers_to_csv, export_offers_to_xlsx
+from autotache_jobs.exporter import (
+    CSV_COLUMNS,
+    export_offers_to_csv,
+    export_offers_to_tracking_xlsx,
+    export_offers_to_xlsx,
+)
 
 
-def _sample_offer() -> dict:
-    return {
+def _sample_offer(**overrides) -> dict:
+    values = {
         "date_detection": "2026-04-29T10:00:00",
         "id_offre": "A1",
         "source": "France Travail",
@@ -46,6 +51,8 @@ def _sample_offer() -> dict:
         "excluded_by": [],
         "url_offre": "https://candidat.francetravail.fr/offres/recherche/detail/A1",
     }
+    values.update(overrides)
+    return values
 
 
 def test_export_offers_to_csv_creates_file(tmp_path: Path) -> None:
@@ -164,3 +171,74 @@ def test_export_xlsx_url_is_clickable(tmp_path: Path) -> None:
     assert url_cell.value == "https://candidat.francetravail.fr/offres/recherche/detail/A1"
     assert url_cell.hyperlink is not None
     assert url_cell.hyperlink.target == url_cell.value
+
+
+def test_tracking_xlsx_is_created_when_missing(tmp_path: Path) -> None:
+    output = export_offers_to_tracking_xlsx([_sample_offer()], tmp_path)
+
+    assert output == tmp_path / "offres_suivi.xlsx"
+    assert output.exists()
+
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+
+    assert [cell.value for cell in worksheet[1]] == CSV_COLUMNS
+    assert worksheet.max_row == 2
+
+
+def test_tracking_xlsx_appends_new_offers(tmp_path: Path) -> None:
+    output = export_offers_to_tracking_xlsx([_sample_offer(id_offre="A1")], tmp_path)
+    export_offers_to_tracking_xlsx([_sample_offer(id_offre="A2", url_offre="https://example.test/A2")], tmp_path)
+
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+    columns = {cell.value: cell.column for cell in worksheet[1]}
+
+    assert worksheet.max_row == 3
+    assert worksheet.cell(row=2, column=columns["id_offre"]).value == "A1"
+    assert worksheet.cell(row=3, column=columns["id_offre"]).value == "A2"
+
+
+def test_tracking_xlsx_does_not_add_same_source_id_twice(tmp_path: Path) -> None:
+    offer = _sample_offer(id_offre="A1")
+
+    output = export_offers_to_tracking_xlsx([offer], tmp_path)
+    export_offers_to_tracking_xlsx([offer], tmp_path)
+
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+
+    assert worksheet.max_row == 2
+
+
+def test_tracking_xlsx_ignores_rejected_offers(tmp_path: Path) -> None:
+    output = export_offers_to_tracking_xlsx([_sample_offer(id_offre="A1", decision="Rejeté")], tmp_path)
+
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+
+    assert worksheet.max_row == 1
+
+
+def test_tracking_xlsx_deduplicates_by_source_and_url_when_id_missing(tmp_path: Path) -> None:
+    offer = _sample_offer(id_offre="", url_offre="https://example.test/job")
+
+    output = export_offers_to_tracking_xlsx([offer], tmp_path)
+    export_offers_to_tracking_xlsx([offer], tmp_path)
+
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+
+    assert worksheet.max_row == 2
+
+
+def test_tracking_xlsx_deduplicates_by_source_title_and_company_when_id_and_url_missing(tmp_path: Path) -> None:
+    offer = _sample_offer(id_offre="", url_offre="", titre="Designer web", entreprise="Studio")
+
+    output = export_offers_to_tracking_xlsx([offer], tmp_path)
+    export_offers_to_tracking_xlsx([offer], tmp_path)
+
+    workbook = load_workbook(output)
+    worksheet = workbook["Offres"]
+
+    assert worksheet.max_row == 2

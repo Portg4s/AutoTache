@@ -91,9 +91,35 @@ def _arbeitnow_offer(offer_id: str = "arbeitnow-front") -> dict:
     }
 
 
+def _remotive_offer(offer_id: str = "remotive-front") -> dict:
+    return {
+        "id": offer_id,
+        "title": "Frontend Developer WordPress",
+        "description": (
+            "Build WordPress interfaces with Elementor, HTML, CSS and JavaScript. "
+            "Remote work possible."
+        ),
+        "company_name": "Remote Studio",
+        "candidate_required_location": "Worldwide",
+        "job_type": "full_time",
+        "category": "Software Development",
+        "tags": ["WordPress", "Elementor"],
+        "url": f"https://remotive.com/remote-jobs/software-dev/{offer_id}",
+    }
+
+
 def _arbeitnow_client(raw_offers: list[dict]) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": raw_offers, "links": {"next": None}, "meta": {}})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _remotive_client(raw_offers: list[dict], calls: list[str] | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(str(request.url))
+        return httpx.Response(200, json={"jobs": raw_offers})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -123,10 +149,15 @@ def test_runner_exports_new_relevant_offer(tmp_path: Path) -> None:
     assert summary["total_new"] == 1
     assert summary["export_path"] is not None
     assert summary["xlsx_export_path"] is not None
+    assert summary["tracking_xlsx_export_path"] is not None
     assert summary["debug_export_path"] is None
     assert summary["debug_xlsx_export_path"] is None
     assert Path(summary["export_path"]).exists()
     assert Path(summary["xlsx_export_path"]).exists()
+    assert Path(summary["tracking_xlsx_export_path"]).exists()
+    assert Path(summary["export_path"]).parent == tmp_path / "exports" / "offres"
+    assert Path(summary["xlsx_export_path"]).parent == tmp_path / "exports" / "offres"
+    assert Path(summary["tracking_xlsx_export_path"]).name == "offres_suivi.xlsx"
     assert summary["discord_enabled"] is False
     assert summary["discord_sent"] is False
     assert summary["discord_status"] == "disabled"
@@ -265,6 +296,8 @@ def test_runner_can_include_debug_offers(tmp_path: Path) -> None:
     assert summary["debug_xlsx_export_path"] is not None
     assert Path(summary["debug_export_path"]).exists()
     assert Path(summary["debug_xlsx_export_path"]).exists()
+    assert Path(summary["debug_export_path"]).parent == tmp_path / "exports" / "debug"
+    assert Path(summary["debug_xlsx_export_path"]).parent == tmp_path / "exports" / "debug"
     assert Path(summary["debug_export_path"]).name.startswith("debug_offres_")
     assert Path(summary["debug_xlsx_export_path"]).name.startswith("debug_offres_")
     assert summary["debug_offers"][0]["id_offre"] == "DATA"
@@ -527,19 +560,22 @@ def test_runner_discord_no_relevant_offer_sends_when_configured(tmp_path: Path) 
     assert summary["discord_sent"] is True
 
 
-def test_runner_default_uses_france_travail_and_not_arbeitnow(tmp_path: Path) -> None:
+def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Path) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer()]])
+    remotive_calls = []
 
     summary = run_job_search(
         _config(),
         _env(),
         client=client,
         arbeitnow_client=_arbeitnow_client([_arbeitnow_offer()]),
+        remotive_client=_remotive_client([_remotive_offer()], calls=remotive_calls),
         data_dir=tmp_path / "data",
         export_dir=tmp_path / "exports",
     )
 
     assert len(client.calls) == 1
+    assert remotive_calls == []
     assert summary["total_raw"] == 1
     assert summary["sources_enabled"] == ["France Travail"]
     assert summary["source_counts"] == {"France Travail": {"raw": 1, "normalized": 1}}
@@ -550,6 +586,12 @@ def test_runner_default_uses_france_travail_and_not_arbeitnow(tmp_path: Path) ->
         "filtered": 0,
     }
     assert summary["source_stats"]["Arbeitnow"] == {
+        "enabled": False,
+        "fetched": 0,
+        "kept": 0,
+        "filtered": 0,
+    }
+    assert summary["source_stats"]["Remotive"] == {
         "enabled": False,
         "fetched": 0,
         "kept": 0,
@@ -620,6 +662,74 @@ def test_runner_merges_france_travail_and_arbeitnow_sources(tmp_path: Path) -> N
     assert {offer["source"] for offer in summary["debug_offers"]} == {"France Travail", "Arbeitnow"}
 
 
+def test_runner_can_use_remotive_when_other_sources_disabled(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+    remotive_calls = []
+
+    summary = run_job_search(
+        _config(sources={"france_travail": {"enabled": False}, "remotive": {"enabled": True, "keywords": ["frontend"]}}),
+        _env(),
+        client=client,
+        remotive_client=_remotive_client([_remotive_offer("RM1")], calls=remotive_calls),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert client.calls == []
+    assert remotive_calls == ["https://remotive.com/api/remote-jobs"]
+    assert summary["total_raw"] == 1
+    assert summary["total_relevant"] == 1
+    assert summary["sources_enabled"] == ["Remotive"]
+    assert summary["source_counts"] == {"Remotive": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["enabled"] is False
+    assert summary["source_stats"]["Arbeitnow"]["enabled"] is False
+    assert summary["source_stats"]["Remotive"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+
+
+def test_runner_merges_france_travail_arbeitnow_and_remotive_sources(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("FT1")]])
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+                "remotive": {"enabled": True, "keywords": ["frontend"]},
+            }
+        ),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        remotive_client=_remotive_client([_remotive_offer("RM1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert len(client.calls) == 1
+    assert summary["total_raw"] == 3
+    assert summary["total_unique_normalized"] == 3
+    assert summary["total_relevant"] == 3
+    assert summary["sources_enabled"] == ["France Travail", "Arbeitnow", "Remotive"]
+    assert summary["source_counts"] == {
+        "France Travail": {"raw": 1, "normalized": 1},
+        "Arbeitnow": {"raw": 1, "normalized": 1},
+        "Remotive": {"raw": 1, "normalized": 1},
+    }
+    assert summary["source_stats"]["Remotive"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert {offer["source"] for offer in summary["debug_offers"]} == {"France Travail", "Arbeitnow", "Remotive"}
+
+
 def test_runner_exposes_arbeitnow_filtered_source_stats(tmp_path: Path) -> None:
     kept = _arbeitnow_offer("kept")
     rejected_keyword = _arbeitnow_offer("keyword-rejected")
@@ -676,6 +786,7 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
     assert summary["source_stats"] == {
         "France Travail": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Arbeitnow": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+        "Remotive": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
     }
     assert summary["total_raw"] == 0
     assert summary["total_normalized"] == 0

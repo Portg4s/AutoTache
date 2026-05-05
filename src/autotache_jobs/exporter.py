@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from openpyxl import load_workbook
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -46,6 +47,8 @@ CSV_COLUMNS = [
 XLSX_RELEVANT_FILL = PatternFill(fill_type="solid", fgColor="EAF4EA")
 XLSX_HEADER_FILL = PatternFill(fill_type="solid", fgColor="D9EAF7")
 XLSX_MAX_COLUMN_WIDTH = 60
+TRACKING_XLSX_FILENAME = "offres_suivi.xlsx"
+EXPORTABLE_DECISIONS = {"Pertinent", "À vérifier", "Ã€ vÃ©rifier"}
 
 
 def export_offers_to_csv(
@@ -133,6 +136,45 @@ def export_offers_to_xlsx(
     return output_path
 
 
+def export_offers_to_tracking_xlsx(
+    offers: list[dict],
+    export_dir: str | Path,
+    filename: str = TRACKING_XLSX_FILENAME,
+) -> Path:
+    """Create or update the cumulative tracking workbook with exportable offers only."""
+
+    target_dir = Path(export_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    output_path = target_dir / filename
+
+    if output_path.exists():
+        workbook = load_workbook(output_path)
+        worksheet = workbook["Offres"] if "Offres" in workbook.sheetnames else workbook.active
+        worksheet.title = "Offres"
+        _ensure_header(worksheet)
+    else:
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Offres"
+        worksheet.append(CSV_COLUMNS)
+
+    existing_keys = _existing_tracking_keys(worksheet)
+    for offer in offers:
+        if not _is_tracking_exportable(offer):
+            continue
+
+        tracking_key = _tracking_key_from_offer(offer)
+        if not tracking_key or tracking_key in existing_keys:
+            continue
+
+        worksheet.append([_format_xlsx_value(column, offer.get(column)) for column in CSV_COLUMNS])
+        existing_keys.add(tracking_key)
+
+    _format_tracking_worksheet(worksheet)
+    workbook.save(output_path)
+    return output_path
+
+
 def _format_csv_value(value: Any) -> str:
     if value is None:
         return ""
@@ -161,6 +203,101 @@ def _format_relevance_value(value: Any) -> str:
     if value is False:
         return "Non"
     return ""
+
+
+def _ensure_header(worksheet: Any) -> None:
+    header = [cell.value for cell in worksheet[1]]
+    if header == CSV_COLUMNS:
+        return
+
+    if worksheet.max_row == 1 and all(value is None for value in header):
+        for column_index, column_name in enumerate(CSV_COLUMNS, start=1):
+            worksheet.cell(row=1, column=column_index).value = column_name
+        return
+
+    worksheet.insert_rows(1)
+    for column_index, column_name in enumerate(CSV_COLUMNS, start=1):
+        worksheet.cell(row=1, column=column_index).value = column_name
+
+
+def _format_tracking_worksheet(worksheet: Any) -> None:
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True)
+        cell.fill = XLSX_HEADER_FILL
+
+    url_column_index = CSV_COLUMNS.index("url_offre") + 1
+    is_relevant_column_index = CSV_COLUMNS.index("is_relevant") + 1
+
+    for row_index in range(2, worksheet.max_row + 1):
+        relevant_cell = worksheet.cell(row=row_index, column=is_relevant_column_index)
+        if relevant_cell.value is True:
+            relevant_cell.value = "Oui"
+        elif relevant_cell.value is False:
+            relevant_cell.value = "Non"
+        if relevant_cell.value == "Oui":
+            for cell in worksheet[row_index]:
+                cell.fill = XLSX_RELEVANT_FILL
+
+        url_cell = worksheet.cell(row=row_index, column=url_column_index)
+        if url_cell.value:
+            url_cell.hyperlink = str(url_cell.value)
+            url_cell.style = "Hyperlink"
+
+    worksheet.auto_filter.ref = worksheet.dimensions
+    worksheet.freeze_panes = "A2"
+    _adjust_column_widths(worksheet)
+
+
+def _existing_tracking_keys(worksheet: Any) -> set[tuple[str, str, str]]:
+    header = [cell.value for cell in worksheet[1]]
+    columns = {column_name: index + 1 for index, column_name in enumerate(header) if column_name}
+    keys: set[tuple[str, str, str]] = set()
+
+    for row_index in range(2, worksheet.max_row + 1):
+        row_values = {
+            column: worksheet.cell(row=row_index, column=column_index).value
+            for column, column_index in columns.items()
+        }
+        key = _tracking_key_from_values(row_values)
+        if key:
+            keys.add(key)
+
+    return keys
+
+
+def _tracking_key_from_offer(offer: dict) -> tuple[str, str, str] | None:
+    return _tracking_key_from_values(offer)
+
+
+def _tracking_key_from_values(values: dict[str, Any]) -> tuple[str, str, str] | None:
+    source = _clean_key_part(values.get("source"))
+    if not source:
+        return None
+
+    offer_id = _clean_key_part(values.get("id_offre"))
+    if offer_id:
+        return ("id", source, offer_id)
+
+    url = _clean_key_part(values.get("url_offre"))
+    if url:
+        return ("url", source, url)
+
+    title = _clean_key_part(values.get("titre"))
+    company = _clean_key_part(values.get("entreprise"))
+    if title or company:
+        return ("title_company", source, f"{title}|{company}")
+
+    return None
+
+
+def _clean_key_part(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().casefold()
+
+
+def _is_tracking_exportable(offer: dict) -> bool:
+    return offer.get("decision") in EXPORTABLE_DECISIONS
 
 
 def _adjust_column_widths(worksheet: Any) -> None:

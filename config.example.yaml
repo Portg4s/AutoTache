@@ -54,9 +54,17 @@ sources:
       - ux
       - web designer
       - figma
-    allowed_locations:
-      - France
-      - Remote
+    allowed_locations: []
+  remotive:
+    enabled: false
+    keywords:
+      - frontend
+      - front-end
+      - wordpress
+      - ui
+      - ux
+      - web designer
+      - figma
 
 notifications:
   discord_enabled: false

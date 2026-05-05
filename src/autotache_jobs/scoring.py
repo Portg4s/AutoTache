@@ -112,25 +112,39 @@ FRONTEND_OR_DESIGN_SIGNALS = [
     "graphiste",
 ]
 
-ELIMINATORY_PATTERNS = {
+STRICT_ELIMINATORY_PATTERNS = {
     "stage": ["stage", "stagiaire"],
     "alternance": ["alternance", "alternant", "apprentissage"],
     "commercial pur": ["commercial", "business developer", "charge d'affaires"],
-    "support informatique pur": ["support informatique", "technicien informatique", "helpdesk", "hotline"],
     "data pur": ["data analyst", "data engineer", "data scientist", "machine learning", "bi "],
-    "devops pur": ["devops", "sre", "cloud engineer", "administrateur systeme"],
-    "ingenierie non web/design": [
-        "ingenieur mecanique",
-        "ingenieur btp",
-        "maintenance",
-        "qualite",
-        "methode",
-        "methodes",
-        "calcul scientifique",
-    ],
 }
 
 BACKEND_PATTERNS = ["backend", "back-end", "back end", "node", "python", "django", "java", "php", "api"]
+SOFT_PENALTY_TERMS = [
+    "chef de projet",
+    "scrum master",
+    "product owner",
+    "devops",
+    "sre",
+    "cloud engineer",
+    "administrateur systeme",
+    "backend",
+    "back-end",
+    "back end",
+    "support informatique",
+    "technicien informatique",
+    "helpdesk",
+    "hotline",
+    "ingenieur mecanique",
+    "ingenieur btp",
+    "ingenieur qualite",
+    "ingenieur methodes",
+    "maintenance",
+    "qualite",
+    "methode",
+    "methodes",
+    "calcul scientifique",
+]
 
 
 def score_offer(offer: dict) -> dict:
@@ -175,12 +189,9 @@ def score_offer(offer: dict) -> dict:
         "localisation": _score_location(location),
         "teletravail": _score_remote(remote_text),
         "contrat": _score_contract(contract),
-        "penalties": _score_penalties(full_text),
-        "eliminatory_reason": _find_eliminatory_reason(full_text),
+        "penalties": _score_penalties(full_text, is_backend_only=_is_backend_only(full_text)),
+        "eliminatory_reason": _find_strict_eliminatory_reason(full_text),
     }
-
-    if _is_backend_only(full_text):
-        details["eliminatory_reason"] = "backend pur"
 
     positive_total = (
         details["technologies"]["score"]
@@ -247,35 +258,15 @@ def _score_contract(contract: str) -> dict[str, Any]:
     return {"score": 5 if matches else 0, "matches": matches}
 
 
-def _score_penalties(text: str) -> dict[str, Any]:
-    negative_terms = [
-        "chef de projet",
-        "scrum master",
-        "product owner",
-        "devops",
-        "backend",
-        "back-end",
-        "data analyst",
-        "data engineer",
-        "data scientist",
-        "machine learning",
-        "support informatique",
-        "technicien informatique",
-        "commercial",
-        "business developer",
-        "ingenieur mecanique",
-        "ingenieur btp",
-        "maintenance",
-        "qualite",
-        "methode",
-        "calcul scientifique",
-    ]
-    matches = _matched_terms(text, negative_terms)
+def _score_penalties(text: str, is_backend_only: bool = False) -> dict[str, Any]:
+    matches = _matched_terms(text, SOFT_PENALTY_TERMS)
+    if is_backend_only and "backend pur" not in matches:
+        matches.append("backend pur")
     return {"score": min(len(matches) * 12, 35), "matches": matches}
 
 
-def _find_eliminatory_reason(text: str) -> str | None:
-    for reason, patterns in ELIMINATORY_PATTERNS.items():
+def _find_strict_eliminatory_reason(text: str) -> str | None:
+    for reason, patterns in STRICT_ELIMINATORY_PATTERNS.items():
         if _matched_terms(text, patterns):
             return reason
     return None

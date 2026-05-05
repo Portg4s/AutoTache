@@ -60,6 +60,8 @@ def summarize_config(config: AppConfig) -> str:
             f"- Pages max Arbeitnow: {config.sources.arbeitnow.max_pages}",
             f"- Keywords Arbeitnow: {len(config.sources.arbeitnow.keywords)}",
             f"- Localisations Arbeitnow: {len(config.sources.arbeitnow.allowed_locations)}",
+            f"- Source Remotive activee: {'oui' if config.sources.remotive.enabled else 'non'}",
+            f"- Keywords Remotive: {len(config.sources.remotive.keywords)}",
             f"- Discord active: {'oui' if config.notifications.discord_enabled else 'non'}",
             f"- Notification sans resultat: {'oui' if config.notifications.notify_when_no_results else 'non'}",
             f"- Termes inclus: {len(config.filters.include_terms)}",

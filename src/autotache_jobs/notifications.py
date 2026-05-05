@@ -76,8 +76,9 @@ def _build_discord_payload(summary: dict[str, Any]) -> dict[str, Any]:
             "name": "📁 Exports",
             "value": "\n".join(
                 [
-                    f"📄 Excel principal: {_filename_or_none(summary.get('xlsx_export_path'))}",
-                    f"🧪 Excel debug: {_filename_or_none(summary.get('debug_xlsx_export_path'))}",
+                    f"📌 Suivi: {_filename_or_none(summary.get('tracking_xlsx_export_path'))}",
+                    f"🆕 Nouvelles offres: {_filename_or_none(summary.get('xlsx_export_path'))}",
+                    f"🧪 Debug: {_filename_or_none(summary.get('debug_xlsx_export_path'))}",
                     "Fichiers disponibles dans le dossier exports/",
                 ]
             ),

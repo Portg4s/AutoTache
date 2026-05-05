@@ -42,6 +42,8 @@ filters:
     assert config.sources.france_travail.enabled is True
     assert config.sources.arbeitnow.enabled is False
     assert config.sources.arbeitnow.max_pages == 1
+    assert config.sources.remotive.enabled is False
+    assert config.sources.remotive.keywords == []
     assert "Configuration chargee avec succes." in summarize_config(config)
 
 
@@ -95,6 +97,12 @@ sources:
     allowed_locations:
       - France
       - Remote
+  remotive:
+    enabled: true
+    keywords:
+      - figma
+      - " "
+      - frontend
 """,
         encoding="utf-8",
     )
@@ -107,8 +115,12 @@ sources:
     assert config.sources.arbeitnow.max_pages == 2
     assert config.sources.arbeitnow.keywords == ["frontend", "wordpress"]
     assert config.sources.arbeitnow.allowed_locations == ["France", "Remote"]
+    assert config.sources.remotive.enabled is True
+    assert config.sources.remotive.keywords == ["figma", "frontend"]
     assert "- Source France Travail activee: non" in summary
     assert "- Source Arbeitnow activee: oui" in summary
     assert "- Pages max Arbeitnow: 2" in summary
     assert "- Keywords Arbeitnow: 2" in summary
     assert "- Localisations Arbeitnow: 2" in summary
+    assert "- Source Remotive activee: oui" in summary
+    assert "- Keywords Remotive: 2" in summary

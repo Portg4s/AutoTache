@@ -53,11 +53,24 @@ class ArbeitnowSourceConfig(BaseModel):
         return [value.strip() for value in values if value and value.strip()]
 
 
+class RemotiveSourceConfig(BaseModel):
+    """Remotive source settings."""
+
+    enabled: bool = False
+    keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("keywords")
+    @classmethod
+    def clean_terms(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value and value.strip()]
+
+
 class SourcesConfig(BaseModel):
     """Offer sources loaded from the local config file."""
 
     france_travail: SourceToggleConfig = Field(default_factory=SourceToggleConfig)
     arbeitnow: ArbeitnowSourceConfig = Field(default_factory=ArbeitnowSourceConfig)
+    remotive: RemotiveSourceConfig = Field(default_factory=RemotiveSourceConfig)
 
 
 class AppConfig(BaseModel):

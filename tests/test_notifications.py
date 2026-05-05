@@ -32,6 +32,7 @@ def test_discord_summary_message_does_not_contain_secret() -> None:
             "decision_counts": {"Pertinent": 1, "À vérifier": 0, "Rejeté": 0},
             "best_score": 87,
             "xlsx_export_path": "exports/offres.xlsx",
+            "tracking_xlsx_export_path": "exports/offres/offres_suivi.xlsx",
             "debug_xlsx_export_path": None,
             "client_secret": secret,
             "Authorization": "Bearer token",
@@ -42,6 +43,10 @@ def test_discord_summary_message_does_not_contain_secret() -> None:
     assert secret not in payload_text
     assert "Bearer token" not in payload_text
     assert "offres.xlsx" in payload_text
+    assert "offres_suivi.xlsx" in payload_text
+    assert "📌 Suivi: offres_suivi.xlsx" in payload_text
+    assert "🆕 Nouvelles offres: offres.xlsx" in payload_text
+    assert "🧪 Debug: aucun" in payload_text
 
 
 def test_discord_summary_uses_file_names_without_full_paths() -> None:
@@ -52,14 +57,19 @@ def test_discord_summary_uses_file_names_without_full_paths() -> None:
             "total_new": 1,
             "decision_counts": {"Pertinent": 1, "À vérifier": 0, "Rejeté": 2},
             "best_score": 91,
-            "xlsx_export_path": r"D:\devAuto\AutoTache\exports\offres_2026-05-04_1151.xlsx",
-            "debug_xlsx_export_path": r"D:\devAuto\AutoTache\exports\debug_offres_2026-05-04_1151.xlsx",
+            "xlsx_export_path": r"D:\devAuto\AutoTache\exports\offres\offres_2026-05-04_1151.xlsx",
+            "tracking_xlsx_export_path": r"D:\devAuto\AutoTache\exports\offres\offres_suivi.xlsx",
+            "debug_xlsx_export_path": r"D:\devAuto\AutoTache\exports\debug\debug_offres_2026-05-04_1151.xlsx",
         }
     )
     payload_text = str(payload)
 
     assert "offres_2026-05-04_1151.xlsx" in payload_text
+    assert "offres_suivi.xlsx" in payload_text
     assert "debug_offres_2026-05-04_1151.xlsx" in payload_text
+    assert "📌 Suivi: offres_suivi.xlsx" in payload_text
+    assert "🆕 Nouvelles offres: offres_2026-05-04_1151.xlsx" in payload_text
+    assert "🧪 Debug: debug_offres_2026-05-04_1151.xlsx" in payload_text
     assert r"D:\devAuto\AutoTache" not in payload_text
     assert "Fichiers disponibles dans le dossier exports/" in payload_text
 
@@ -73,6 +83,7 @@ def test_discord_summary_contains_decision_counts_and_best_score() -> None:
             "decision_counts": {"Pertinent": 0, "À vérifier": 2, "Rejeté": 1},
             "best_score": 72,
             "xlsx_export_path": None,
+            "tracking_xlsx_export_path": None,
             "debug_xlsx_export_path": "exports/debug_offres.xlsx",
         }
     )
@@ -83,6 +94,9 @@ def test_discord_summary_contains_decision_counts_and_best_score() -> None:
     assert "🔴 Rejeté: 1" in payload_text
     assert "🏆 Meilleur score: 72/100" in payload_text
     assert "Des offres sont à vérifier manuellement." in payload_text
+    assert "📌 Suivi: aucun" in payload_text
+    assert "🆕 Nouvelles offres: aucun" in payload_text
+    assert "🧪 Debug: debug_offres.xlsx" in payload_text
 
 
 def test_discord_payload_contains_embed_with_color() -> None:

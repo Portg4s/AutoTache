@@ -86,6 +86,26 @@ class AdzunaSourceConfig(BaseModel):
         return value.strip() if value else ""
 
 
+class JoobleSourceConfig(BaseModel):
+    """Jooble source settings."""
+
+    enabled: bool = False
+    base_url: str = "https://fr.jooble.org/api"
+    max_pages: int = Field(default=1, ge=1)
+    keywords: list[str] = Field(default_factory=list)
+    location: str = ""
+
+    @field_validator("keywords")
+    @classmethod
+    def clean_terms(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value and value.strip()]
+
+    @field_validator("base_url", "location")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return value.strip() if value else ""
+
+
 class SourcesConfig(BaseModel):
     """Offer sources loaded from the local config file."""
 
@@ -93,6 +113,7 @@ class SourcesConfig(BaseModel):
     arbeitnow: ArbeitnowSourceConfig = Field(default_factory=ArbeitnowSourceConfig)
     remotive: RemotiveSourceConfig = Field(default_factory=RemotiveSourceConfig)
     adzuna: AdzunaSourceConfig = Field(default_factory=AdzunaSourceConfig)
+    jooble: JoobleSourceConfig = Field(default_factory=JoobleSourceConfig)
 
 
 class AppConfig(BaseModel):
@@ -130,6 +151,7 @@ class FranceTravailEnv(BaseModel):
     discord_webhook_url: str = ""
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""
+    jooble_api_key: str = ""
 
     @field_validator("client_id", "client_secret")
     @classmethod
@@ -138,7 +160,7 @@ class FranceTravailEnv(BaseModel):
             raise ValueError("valeur requise")
         return value.strip()
 
-    @field_validator("discord_webhook_url", "adzuna_app_id", "adzuna_app_key")
+    @field_validator("discord_webhook_url", "adzuna_app_id", "adzuna_app_key", "jooble_api_key")
     @classmethod
     def clean_optional_secret(cls, value: str) -> str:
         return value.strip() if value else ""

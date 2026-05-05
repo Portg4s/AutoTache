@@ -79,6 +79,15 @@ sources:
       - web designer
       - figma
     location: ""
+  jooble:
+    enabled: false
+    base_url: "https://fr.jooble.org/api"
+    max_pages: 1
+    keywords:
+      - informatique
+      - web
+      - developpeur
+    location: Dijon
 
 notifications:
   discord_enabled: false

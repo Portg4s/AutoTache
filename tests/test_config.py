@@ -50,6 +50,11 @@ filters:
     assert config.sources.adzuna.results_per_page == 20
     assert config.sources.adzuna.keywords == []
     assert config.sources.adzuna.location == ""
+    assert config.sources.jooble.enabled is False
+    assert config.sources.jooble.base_url == "https://fr.jooble.org/api"
+    assert config.sources.jooble.max_pages == 1
+    assert config.sources.jooble.keywords == []
+    assert config.sources.jooble.location == ""
     assert "Configuration chargee avec succes." in summarize_config(config)
 
 
@@ -119,6 +124,15 @@ sources:
       - " "
       - frontend
     location: Dijon
+  jooble:
+    enabled: true
+    base_url: "https://fr.jooble.org/api"
+    max_pages: 2
+    keywords:
+      - web
+      - " "
+      - developpeur
+    location: Dijon
 """,
         encoding="utf-8",
     )
@@ -139,6 +153,11 @@ sources:
     assert config.sources.adzuna.results_per_page == 15
     assert config.sources.adzuna.keywords == ["wordpress", "frontend"]
     assert config.sources.adzuna.location == "Dijon"
+    assert config.sources.jooble.enabled is True
+    assert config.sources.jooble.base_url == "https://fr.jooble.org/api"
+    assert config.sources.jooble.max_pages == 2
+    assert config.sources.jooble.keywords == ["web", "developpeur"]
+    assert config.sources.jooble.location == "Dijon"
     assert "- Source France Travail activee: non" in summary
     assert "- Source Arbeitnow activee: oui" in summary
     assert "- Pages max Arbeitnow: 2" in summary
@@ -152,3 +171,8 @@ sources:
     assert "- Resultats par page Adzuna: 15" in summary
     assert "- Keywords Adzuna: 2" in summary
     assert "- Location Adzuna: Dijon" in summary
+    assert "- Source Jooble activee: oui" in summary
+    assert "- Base URL Jooble: https://fr.jooble.org/api" in summary
+    assert "- Pages max Jooble: 2" in summary
+    assert "- Keywords Jooble: 2" in summary
+    assert "- Location Jooble: Dijon" in summary

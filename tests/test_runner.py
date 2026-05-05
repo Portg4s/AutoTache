@@ -47,6 +47,7 @@ def _env(**overrides) -> FranceTravailEnv:
         "api_base_url": "https://example.test/api",
         "adzuna_app_id": "fake-adzuna-id",
         "adzuna_app_key": "fake-adzuna-key",
+        "jooble_api_key": "fake-jooble-key",
     }
     values.update(overrides)
     return FranceTravailEnv(
@@ -126,6 +127,21 @@ def _adzuna_offer(offer_id: str = "adzuna-front") -> dict:
     }
 
 
+def _jooble_offer(offer_id: str = "jooble-front") -> dict:
+    return {
+        "id": offer_id,
+        "title": "Frontend Developer WordPress",
+        "snippet": (
+            "Build WordPress interfaces with Elementor, HTML, CSS and JavaScript. "
+            "Remote work possible."
+        ),
+        "company": "Remote Studio",
+        "location": "Paris, France",
+        "type": "CDI",
+        "link": f"https://jooble.org/jdp/{offer_id}",
+    }
+
+
 def _arbeitnow_client(raw_offers: list[dict]) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": raw_offers, "links": {"next": None}, "meta": {}})
@@ -147,6 +163,15 @@ def _adzuna_client(raw_offers: list[dict], calls: list[str] | None = None) -> ht
         if calls is not None:
             calls.append(str(request.url))
         return httpx.Response(200, json={"results": raw_offers})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _jooble_client(raw_offers: list[dict], calls: list[str] | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(str(request.url))
+        return httpx.Response(200, json={"jobs": raw_offers})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -591,6 +616,7 @@ def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Pa
     client = FakeFranceTravailClient([[_wordpress_offer()]])
     remotive_calls = []
     adzuna_calls = []
+    jooble_calls = []
 
     summary = run_job_search(
         _config(),
@@ -599,6 +625,7 @@ def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Pa
         arbeitnow_client=_arbeitnow_client([_arbeitnow_offer()]),
         remotive_client=_remotive_client([_remotive_offer()], calls=remotive_calls),
         adzuna_client=_adzuna_client([_adzuna_offer()], calls=adzuna_calls),
+        jooble_client=_jooble_client([_jooble_offer()], calls=jooble_calls),
         data_dir=tmp_path / "data",
         export_dir=tmp_path / "exports",
     )
@@ -606,6 +633,7 @@ def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Pa
     assert len(client.calls) == 1
     assert remotive_calls == []
     assert adzuna_calls == []
+    assert jooble_calls == []
     assert summary["total_raw"] == 1
     assert summary["sources_enabled"] == ["France Travail"]
     assert summary["source_counts"] == {"France Travail": {"raw": 1, "normalized": 1}}
@@ -628,6 +656,12 @@ def test_runner_default_uses_france_travail_and_no_optional_sources(tmp_path: Pa
         "filtered": 0,
     }
     assert summary["source_stats"]["Adzuna"] == {
+        "enabled": False,
+        "fetched": 0,
+        "kept": 0,
+        "filtered": 0,
+    }
+    assert summary["source_stats"]["Jooble"] == {
         "enabled": False,
         "fetched": 0,
         "kept": 0,
@@ -880,6 +914,123 @@ def test_runner_merges_all_sources_including_adzuna(tmp_path: Path) -> None:
     }
 
 
+def test_runner_can_use_jooble_when_other_sources_disabled(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+    jooble_calls = []
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": False},
+                "jooble": {
+                    "enabled": True,
+                    "base_url": "https://example.test/jooble-runner",
+                    "max_pages": 1,
+                    "keywords": ["web"],
+                    "location": "Dijon",
+                },
+            }
+        ),
+        _env(),
+        client=client,
+        jooble_client=_jooble_client([_jooble_offer("JB1")], calls=jooble_calls),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert client.calls == []
+    assert len(jooble_calls) == 1
+    assert "https://example.test/jooble-runner/fake-jooble-key" in jooble_calls[0]
+    assert summary["total_raw"] == 1
+    assert summary["total_relevant"] == 1
+    assert summary["sources_enabled"] == ["Jooble"]
+    assert summary["source_counts"] == {"Jooble": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["enabled"] is False
+    assert summary["source_stats"]["Arbeitnow"]["enabled"] is False
+    assert summary["source_stats"]["Remotive"]["enabled"] is False
+    assert summary["source_stats"]["Adzuna"]["enabled"] is False
+    assert summary["source_stats"]["Jooble"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+
+
+def test_runner_jooble_enabled_without_key_raises_clear_error(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer()]])
+    calls = []
+
+    try:
+        run_job_search(
+            _config(sources={"france_travail": {"enabled": False}, "jooble": {"enabled": True}}),
+            _env(jooble_api_key=""),
+            client=client,
+            jooble_client=_jooble_client([_jooble_offer()], calls=calls),
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Jooble activee sans cle devrait echouer.")
+
+    assert calls == []
+    assert "Cle Jooble manquante" in message
+    assert "fake-jooble-key" not in message
+    assert "JOOBLE_API_KEY" not in message
+
+
+def test_runner_merges_all_sources_including_jooble(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("FT1")]])
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+                "remotive": {"enabled": True, "keywords": ["frontend"]},
+                "adzuna": {"enabled": True, "keywords": ["frontend"]},
+                "jooble": {"enabled": True, "keywords": ["web"]},
+            }
+        ),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        remotive_client=_remotive_client([_remotive_offer("RM1")]),
+        adzuna_client=_adzuna_client([_adzuna_offer("AZ1")]),
+        jooble_client=_jooble_client([_jooble_offer("JB1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        include_debug_offers=True,
+    )
+
+    assert summary["total_raw"] == 5
+    assert summary["total_unique_normalized"] == 5
+    assert summary["total_relevant"] == 5
+    assert summary["sources_enabled"] == ["France Travail", "Arbeitnow", "Remotive", "Adzuna", "Jooble"]
+    assert summary["source_counts"] == {
+        "France Travail": {"raw": 1, "normalized": 1},
+        "Arbeitnow": {"raw": 1, "normalized": 1},
+        "Remotive": {"raw": 1, "normalized": 1},
+        "Adzuna": {"raw": 1, "normalized": 1},
+        "Jooble": {"raw": 1, "normalized": 1},
+    }
+    assert summary["source_stats"]["Jooble"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert {offer["source"] for offer in summary["debug_offers"]} == {
+        "France Travail",
+        "Arbeitnow",
+        "Remotive",
+        "Adzuna",
+        "Jooble",
+    }
+
+
 def test_runner_exposes_arbeitnow_filtered_source_stats(tmp_path: Path) -> None:
     kept = _arbeitnow_offer("kept")
     rejected_keyword = _arbeitnow_offer("keyword-rejected")
@@ -938,6 +1089,7 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
         "Arbeitnow": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Remotive": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Adzuna": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+        "Jooble": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
     }
     assert summary["total_raw"] == 0
     assert summary["total_normalized"] == 0

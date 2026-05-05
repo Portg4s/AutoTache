@@ -15,6 +15,7 @@ from .sources.adzuna import AdzunaSource
 from .sources.arbeitnow import ArbeitnowSource
 from .sources.base import SourceResult, SourceStats
 from .sources.france_travail import FranceTravailSource
+from .sources.jooble import JoobleSource
 from .sources.remotive import RemotiveSource
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
 
@@ -31,6 +32,7 @@ def run_job_search(
     arbeitnow_client: Any | None = None,
     remotive_client: Any | None = None,
     adzuna_client: Any | None = None,
+    jooble_client: Any | None = None,
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
@@ -41,6 +43,7 @@ def run_job_search(
         arbeitnow_client=arbeitnow_client,
         remotive_client=remotive_client,
         adzuna_client=adzuna_client,
+        jooble_client=jooble_client,
         sleep_func=sleep_func,
     )
     raw_offers = [offer for result in source_results for offer in result.raw_offers]
@@ -110,6 +113,7 @@ def _collect_source_results(
     arbeitnow_client: Any | None = None,
     remotive_client: Any | None = None,
     adzuna_client: Any | None = None,
+    jooble_client: Any | None = None,
     sleep_func: Any = time.sleep,
 ) -> list[SourceResult]:
     source_results: list[SourceResult] = []
@@ -155,6 +159,18 @@ def _collect_source_results(
                 keywords=config.sources.adzuna.keywords,
                 location=config.sources.adzuna.location,
                 http_client=adzuna_client,
+            ).collect()
+        )
+
+    if config.sources.jooble.enabled:
+        source_results.append(
+            JoobleSource(
+                api_key=_jooble_api_key(env_settings),
+                base_url=config.sources.jooble.base_url,
+                max_pages=config.sources.jooble.max_pages,
+                keywords=config.sources.jooble.keywords,
+                location=config.sources.jooble.location,
+                http_client=jooble_client,
             ).collect()
         )
 
@@ -221,6 +237,8 @@ def _enabled_source_names(config: Any) -> list[str]:
         enabled.append("Remotive")
     if config.sources.adzuna.enabled:
         enabled.append("Adzuna")
+    if config.sources.jooble.enabled:
+        enabled.append("Jooble")
     return enabled
 
 
@@ -240,6 +258,7 @@ def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, 
         "Arbeitnow": _stats_dict(SourceStats(enabled=bool(config.sources.arbeitnow.enabled), fetched=0, kept=0, filtered=0)),
         "Remotive": _stats_dict(SourceStats(enabled=bool(config.sources.remotive.enabled), fetched=0, kept=0, filtered=0)),
         "Adzuna": _stats_dict(SourceStats(enabled=bool(config.sources.adzuna.enabled), fetched=0, kept=0, filtered=0)),
+        "Jooble": _stats_dict(SourceStats(enabled=bool(config.sources.jooble.enabled), fetched=0, kept=0, filtered=0)),
     }
     for result in source_results:
         stats[result.source_name] = _stats_dict(result.stats)
@@ -252,6 +271,13 @@ def _adzuna_credentials(env_settings: Any) -> tuple[str, str]:
     if not app_id or not app_key:
         raise RuntimeError("Identifiants Adzuna manquants ou invalides dans l'environnement local.")
     return app_id, app_key
+
+
+def _jooble_api_key(env_settings: Any) -> str:
+    api_key = str(getattr(env_settings, "jooble_api_key", "") or "").strip()
+    if not api_key:
+        raise RuntimeError("Cle Jooble manquante ou invalide dans l'environnement local.")
+    return api_key
 
 
 def _stats_dict(stats: SourceStats) -> dict[str, int | bool]:

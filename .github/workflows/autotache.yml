@@ -1,0 +1,198 @@
+name: AutoTache
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-autotache:
+    name: Run AutoTache
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Create runtime folders
+        run: |
+          mkdir -p data
+          mkdir -p exports/offres
+          mkdir -p exports/debug
+          mkdir -p logs
+
+      - name: Restore AutoTache state cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            exports/offres/offres_suivi.xlsx
+          key: autotache-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            autotache-state-${{ runner.os }}-
+
+      - name: Create temporary .env
+        env:
+          FRANCE_TRAVAIL_CLIENT_ID: ${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
+          FRANCE_TRAVAIL_CLIENT_SECRET: ${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          values = {
+              "FRANCE_TRAVAIL_CLIENT_ID": os.environ["FRANCE_TRAVAIL_CLIENT_ID"],
+              "FRANCE_TRAVAIL_CLIENT_SECRET": os.environ["FRANCE_TRAVAIL_CLIENT_SECRET"],
+              "ADZUNA_APP_ID": os.environ["ADZUNA_APP_ID"],
+              "ADZUNA_APP_KEY": os.environ["ADZUNA_APP_KEY"],
+              "JOOBLE_API_KEY": os.environ["JOOBLE_API_KEY"],
+              "DISCORD_WEBHOOK_URL": os.environ["DISCORD_WEBHOOK_URL"],
+              "FRANCE_TRAVAIL_SCOPE": "api_offresdemploiv2 o2dsoffre",
+              "FRANCE_TRAVAIL_TOKEN_URL": "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
+              "FRANCE_TRAVAIL_API_BASE_URL": "https://api.francetravail.io/partenaire/offresdemploi/v2",
+          }
+
+          content = "\n".join(f"{key}={value}" for key, value in values.items())
+          Path(".env").write_text(content + "\n", encoding="utf-8")
+          PY
+
+      - name: Create temporary cloud config
+        run: |
+          cat > config.yaml <<'YAML'
+          keywords:
+            - wordpress
+            - developpeur wordpress
+            - integrateur wordpress
+            - integrateur web
+            - integrateur front-end
+            - developpeur front-end
+            - frontend developer
+            - front-end developer
+            - webdesigner
+            - designer web
+            - ui designer
+            - ux designer
+            - ui/ux designer
+            - graphiste web
+            - graphiste
+            - figma
+            - elementor
+            - woocommerce
+            - html
+            - css
+            - javascript
+            - react
+            - vue.js
+            - tailwind
+            - bootstrap
+
+          communes:
+            - "21231"
+            - "21200"
+
+          distance_km: 30
+          contract_types:
+            - CDI
+            - CDD
+          days_back: 30
+          allow_internship: false
+          allow_apprenticeship: false
+
+          api:
+            request_delay_seconds: 0.8
+            max_retries: 3
+
+          sources:
+            france_travail:
+              enabled: true
+            adzuna:
+              enabled: true
+              country: fr
+              max_pages: 1
+              results_per_page: 20
+              keywords:
+                - informatique
+                - web
+                - developpeur
+                - wordpress
+                - designer
+                - graphiste
+                - ui
+                - ux
+              location: Dijon
+            jooble:
+              enabled: true
+              base_url: "https://fr.jooble.org/api"
+              max_pages: 1
+              keywords:
+                - informatique
+                - web
+                - developpeur
+              location: Dijon
+            arbeitnow:
+              enabled: false
+              max_pages: 1
+              keywords: []
+              allowed_locations: []
+            remotive:
+              enabled: false
+              keywords: []
+
+          notifications:
+            discord_enabled: true
+            notify_when_no_results: true
+
+          filters:
+            exclude_terms:
+              - data scientist
+              - data engineer
+              - data analyst
+              - calcul scientifique
+              - ingenieur mecanique
+              - ingenieur btp
+              - ingenieur qualite
+              - ingenieur methodes
+              - ingenieur maintenance
+              - commercial
+            include_terms:
+              - front-end
+              - frontend
+              - wordpress
+              - integrateur
+              - ui
+              - ux
+              - webdesigner
+              - graphiste web
+          YAML
+
+      - name: Run AutoTache
+        run: python -m autotache_jobs --debug
+
+      - name: Upload exports artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autotache-exports
+          path: exports/
+          if-no-files-found: warn
+
+      - name: Upload logs artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autotache-logs
+          path: logs/
+          if-no-files-found: warn

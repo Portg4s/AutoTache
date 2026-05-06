@@ -2,6 +2,8 @@ name: AutoTache
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * *"
 
 jobs:
   run-autotache:
@@ -117,7 +119,7 @@ jobs:
 
           sources:
             france_travail:
-              enabled: false
+              enabled: true
             adzuna:
               enabled: true
               country: fr
@@ -134,7 +136,7 @@ jobs:
                 - ux
               location: Dijon
             jooble:
-              enabled: false
+              enabled: true
               base_url: "https://fr.jooble.org/api"
               max_pages: 1
               keywords:

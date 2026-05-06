@@ -127,13 +127,6 @@ jobs:
               results_per_page: 20
               keywords:
                 - informatique
-                - web
-                - developpeur
-                - wordpress
-                - designer
-                - graphiste
-                - ui
-                - ux
               location: Dijon
             jooble:
               enabled: true

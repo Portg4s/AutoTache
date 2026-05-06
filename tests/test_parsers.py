@@ -69,6 +69,39 @@ def test_parse_salary_spaced_euro_range() -> None:
     assert result["salaire_moyen"] == 40000
 
 
+def test_parse_salary_european_dot_thousands() -> None:
+    result = parse_salary("Salaire 120.000 euros annuel.")
+
+    assert result["salaire_min"] == 120000
+    assert result["salaire_max"] is None
+    assert result["salaire_moyen"] == 120000
+
+
+def test_parse_salary_spaced_thousands() -> None:
+    result = parse_salary("Salaire 35 000 euros annuel.")
+
+    assert result["salaire_min"] == 35000
+    assert result["salaire_max"] is None
+    assert result["salaire_moyen"] == 35000
+
+
+def test_parse_salary_k_single_value() -> None:
+    result = parse_salary("Salaire 35k selon experience.")
+
+    assert result["salaire_min"] == 35000
+    assert result["salaire_max"] is None
+    assert result["salaire_moyen"] == 35000
+    assert result["salaire_type"] == "annuel"
+
+
+def test_parse_salary_leading_dot_thousands_does_not_crash() -> None:
+    result = parse_salary("Salaire .120.000 euros annuel.")
+
+    assert result["salaire_min"] == 120000
+    assert result["salaire_max"] is None
+    assert result["salaire_moyen"] == 120000
+
+
 def test_parse_salary_monthly_gross() -> None:
     result = parse_salary("Salaire proposé : 2500 € brut mensuel.")
 

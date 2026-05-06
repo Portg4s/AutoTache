@@ -143,6 +143,15 @@ def test_normalize_arbeitnow_offer_extracts_technologies_from_title_description_
     assert normalized["technologies"] == ["HTML", "CSS", "JavaScript", "React", "Tailwind", "Figma", "UI"]
 
 
+def test_normalize_arbeitnow_offer_does_not_crash_on_malformed_salary() -> None:
+    normalized = normalize_arbeitnow_offer(_frontend_offer(salary=".120.000"))
+
+    assert normalized["salaire_brut"] == ".120.000"
+    assert normalized["salaire_min"] == 120000
+    assert normalized["salaire_max"] is None
+    assert normalized["source"] == "Arbeitnow"
+
+
 def test_collect_adds_normalization_and_scoring_without_real_network() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": [_frontend_offer()], "links": {"next": None}, "meta": {}})

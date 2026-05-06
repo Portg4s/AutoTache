@@ -34,12 +34,47 @@ def _normalize_text(text: str) -> str:
 
 
 def _parse_number(raw_value: str) -> float | None:
-    digits = re.sub(r"[^\d,.kK]", "", raw_value).replace(",", ".")
-    if not re.search(r"\d", digits):
+    cleaned = re.sub(r"[^\d\s,.kK]", "", raw_value or "").strip()
+    if not re.search(r"\d", cleaned):
         return None
-    if "k" in digits.lower():
-        return float(digits.lower().replace("k", "")) * 1000
-    return float(digits)
+
+    compact = re.sub(r"\s+", "", cleaned).strip(".,")
+    if not compact or not re.search(r"\d", compact):
+        return None
+
+    try:
+        if "k" in compact.lower():
+            k_value = compact.lower().replace("k", "").replace(",", ".").strip(".,")
+            return float(k_value) * 1000 if k_value else None
+
+        if "." not in compact and "," not in compact:
+            return float(compact)
+
+        parts = re.split(r"[,.]", compact)
+        if (
+            len(parts) > 1
+            and all(part.isdigit() for part in parts)
+            and 1 <= len(parts[0]) <= 3
+            and all(len(part) == 3 for part in parts[1:])
+        ):
+            return float("".join(parts))
+
+        if "." in compact and "," in compact:
+            last_dot = compact.rfind(".")
+            last_comma = compact.rfind(",")
+            decimal_separator = "." if last_dot > last_comma else ","
+            thousands_separator = "," if decimal_separator == "." else "."
+            normalized = compact.replace(thousands_separator, "").replace(decimal_separator, ".")
+        else:
+            separator = "." if "." in compact else ","
+            left, right = compact.rsplit(separator, 1)
+            if len(right) == 3 and left.replace(separator, "").isdigit():
+                return float(left.replace(separator, "") + right)
+            normalized = f"{left.replace(separator, '')}.{right}"
+
+        return float(normalized)
+    except ValueError:
+        return None
 
 
 def _salary_dict(
@@ -105,7 +140,7 @@ def parse_salary(text: str) -> dict[str, float | str | bool | None]:
 
     salaire_brut = "brut" in normalized
     salaire_type = None
-    if re.search(r"\b(annuel|an|annee|k)\b", normalized):
+    if re.search(r"\b(annuel|an|annee)\b|\d\s*k\b", normalized):
         salaire_type = "annuel"
     elif re.search(r"\b(mensuel|mois)\b", normalized):
         salaire_type = "mensuel"
@@ -137,6 +172,13 @@ def parse_salary(text: str) -> dict[str, float | str | bool | None]:
             salaire_min = _parse_number(match.group(1))
             if salaire_min is None:
                 continue
+            return _salary_dict(salaire_min, None, salaire_type, salaire_brut)
+
+    if re.fullmatch(r"[\s\d,.k]+", normalized):
+        salaire_min = _parse_number(normalized)
+        if salaire_min is not None:
+            if salaire_type is None and salaire_min >= 10000:
+                salaire_type = "annuel"
             return _salary_dict(salaire_min, None, salaire_type, salaire_brut)
 
     return _salary_dict()

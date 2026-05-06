@@ -117,7 +117,7 @@ jobs:
 
           sources:
             france_travail:
-              enabled: true
+              enabled: false
             adzuna:
               enabled: true
               country: fr
@@ -134,7 +134,7 @@ jobs:
                 - ux
               location: Dijon
             jooble:
-              enabled: true
+              enabled: false
               base_url: "https://fr.jooble.org/api"
               max_pages: 1
               keywords:

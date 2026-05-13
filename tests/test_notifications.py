@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from autotache_jobs.notifications import COLOR_REVIEW, COLOR_SUCCESS, send_discord_summary
 
 
@@ -9,10 +12,13 @@ class FakeDiscordResponse:
 def _send_and_capture(summary: dict) -> dict:
     captured = {}
 
-    def fake_post(webhook_url: str, json: dict, timeout: int) -> FakeDiscordResponse:
+    def fake_post(webhook_url: str, **kwargs) -> FakeDiscordResponse:
         captured["webhook_url"] = webhook_url
-        captured["payload"] = json
-        captured["timeout"] = timeout
+        captured["timeout"] = kwargs["timeout"]
+        if "json" in kwargs:
+            captured["payload"] = kwargs["json"]
+        else:
+            captured["payload"] = json.loads(kwargs["data"]["payload_json"])
         return FakeDiscordResponse()
 
     result = send_discord_summary("https://discord.test/webhook", summary, http_post=fake_post)
@@ -173,6 +179,73 @@ def test_discord_payload_uses_review_color_when_no_new_offer_but_review_exists()
     )
 
     assert payload["embeds"][0]["color"] == COLOR_REVIEW
+
+
+def test_discord_summary_sends_tracking_xlsx_as_attachment_when_file_exists(tmp_path: Path) -> None:
+    tracking_file = tmp_path / "exports" / "offres" / "offres_suivi.xlsx"
+    tracking_file.parent.mkdir(parents=True)
+    tracking_file.write_bytes(b"fake xlsx bytes")
+    captured = {}
+
+    def fake_post(webhook_url: str, data: dict, files: dict, timeout: int) -> FakeDiscordResponse:
+        captured["webhook_url"] = webhook_url
+        captured["data"] = data
+        captured["files"] = files
+        captured["timeout"] = timeout
+        return FakeDiscordResponse()
+
+    result = send_discord_summary(
+        "https://discord.test/webhook",
+        {
+            "total_raw": 1,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+            "tracking_xlsx_export_path": str(tracking_file),
+        },
+        http_post=fake_post,
+    )
+
+    payload = json.loads(captured["data"]["payload_json"])
+    file_name, file_handle, content_type = captured["files"]["file"]
+
+    assert result["sent"] is True
+    assert captured["webhook_url"] == "https://discord.test/webhook"
+    assert captured["timeout"] == 10
+    assert "payload_json" in captured["data"]
+    assert "json" not in captured
+    assert file_name == "offres_suivi.xlsx"
+    assert file_handle.name == str(tracking_file)
+    assert content_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert "Le fichier de suivi cumulatif est joint." in str(payload)
+
+
+def test_discord_summary_uses_json_when_tracking_xlsx_is_missing(tmp_path: Path) -> None:
+    missing_file = tmp_path / "exports" / "offres" / "offres_suivi.xlsx"
+    captured = {}
+
+    def fake_post(webhook_url: str, json: dict, timeout: int) -> FakeDiscordResponse:
+        captured["webhook_url"] = webhook_url
+        captured["payload"] = json
+        captured["timeout"] = timeout
+        return FakeDiscordResponse()
+
+    result = send_discord_summary(
+        "https://discord.test/webhook",
+        {
+            "total_raw": 0,
+            "total_relevant": 0,
+            "total_new": 0,
+            "tracking_xlsx_export_path": str(missing_file),
+        },
+        http_post=fake_post,
+    )
+
+    assert result["sent"] is True
+    assert captured["webhook_url"] == "https://discord.test/webhook"
+    assert captured["timeout"] == 10
+    assert captured["payload"]["embeds"]
+    assert "Le fichier de suivi cumulatif est joint." not in str(captured["payload"])
 
 
 def test_discord_summary_without_webhook_returns_clear_status() -> None:

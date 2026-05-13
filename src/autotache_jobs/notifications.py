@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import httpx
@@ -19,6 +20,7 @@ def send_discord_summary(
     webhook_url: str,
     summary: dict[str, Any],
     http_post: Any = httpx.post,
+    tracking_file_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Send a compact Discord summary through a webhook."""
 
@@ -29,9 +31,25 @@ def send_discord_summary(
             "error": "DISCORD_WEBHOOK_URL est vide ou absent.",
         }
 
-    payload = _build_discord_payload(summary)
+    attachment_path = _tracking_attachment_path(summary, tracking_file_path)
+    payload = _build_discord_payload(summary, has_tracking_attachment=attachment_path is not None)
     try:
-        response = http_post(webhook_url.strip(), json=payload, timeout=10)
+        if attachment_path is None:
+            response = http_post(webhook_url.strip(), json=payload, timeout=10)
+        else:
+            with attachment_path.open("rb") as tracking_file:
+                response = http_post(
+                    webhook_url.strip(),
+                    data={"payload_json": json.dumps(payload)},
+                    files={
+                        "file": (
+                            "offres_suivi.xlsx",
+                            tracking_file,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                    },
+                    timeout=10,
+                )
         response.raise_for_status()
     except Exception as exc:
         return {
@@ -43,7 +61,7 @@ def send_discord_summary(
     return {"sent": True, "status": "sent", "error": None}
 
 
-def _build_discord_payload(summary: dict[str, Any]) -> dict[str, Any]:
+def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: bool = False) -> dict[str, Any]:
     decision_counts = _decision_counts(summary)
     review_count = decision_counts.get("\u00c0 v\u00e9rifier", 0)
     best_score = summary.get("best_score")
@@ -100,6 +118,8 @@ def _build_discord_payload(summary: dict[str, Any]) -> dict[str, Any]:
             status_lines.append("Des offres sont \u00e0 v\u00e9rifier manuellement.")
     else:
         status_lines.append("R\u00e9sum\u00e9 g\u00e9n\u00e9r\u00e9 avec succ\u00e8s.")
+    if has_tracking_attachment:
+        status_lines.append("Le fichier de suivi cumulatif est joint.")
     fields.append({"name": "\u2139\ufe0f Statut", "value": "\n".join(status_lines), "inline": False})
 
     return {
@@ -156,3 +176,19 @@ def _filename_or_none(value: Any) -> str:
         return "aucun"
     path = str(value)
     return PureWindowsPath(path).name
+
+
+def _tracking_attachment_path(summary: dict[str, Any], override_path: str | Path | None = None) -> Path | None:
+    raw_path = override_path if override_path is not None else summary.get("tracking_xlsx_export_path")
+    if not raw_path:
+        return None
+
+    try:
+        path = Path(raw_path)
+        is_file = path.is_file()
+    except (OSError, ValueError):
+        return None
+
+    if is_file:
+        return path
+    return None

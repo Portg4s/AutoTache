@@ -24,3 +24,5 @@ config.yaml
 .pytest-run-verify/
 .pytest-tmp/
 pytest_run_autotache_sources/
+
+.pytest_tmp/

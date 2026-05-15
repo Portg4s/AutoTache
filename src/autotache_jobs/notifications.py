@@ -14,6 +14,7 @@ DISCORD_TITLE = "\U0001F4CC AutoTache - R\u00e9sum\u00e9 recherche emploi"
 COLOR_SUCCESS = 0x2ECC71
 COLOR_REVIEW = 0xF1C40F
 COLOR_NEUTRAL = 0x5DADE2
+DISCORD_TIMEOUT_SECONDS = 30
 
 
 def send_discord_summary(
@@ -33,13 +34,13 @@ def send_discord_summary(
 
     attachment_path = _tracking_attachment_path(summary, tracking_file_path)
     payload = _build_discord_payload(summary, has_tracking_attachment=attachment_path is not None)
-    try:
-        if attachment_path is None:
-            response = http_post(webhook_url.strip(), json=payload, timeout=10)
-        else:
+    webhook = webhook_url.strip()
+
+    if attachment_path is not None:
+        try:
             with attachment_path.open("rb") as tracking_file:
                 response = http_post(
-                    webhook_url.strip(),
+                    webhook,
                     data={"payload_json": json.dumps(payload)},
                     files={
                         "file": (
@@ -48,17 +49,52 @@ def send_discord_summary(
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
                     },
-                    timeout=10,
+                    timeout=DISCORD_TIMEOUT_SECONDS,
                 )
+            response.raise_for_status()
+        except Exception as exc:
+            fallback_payload = _build_discord_payload(summary, has_tracking_attachment=False)
+            attachment_error = _discord_error_message(
+                "Attachment send failed", exc, include_summary_prefix=False
+            )
+            try:
+                response = http_post(webhook, json=fallback_payload, timeout=DISCORD_TIMEOUT_SECONDS)
+                response.raise_for_status()
+            except Exception as fallback_exc:
+                return {
+                    "sent": False,
+                    "status": "send_failed",
+                    "error": _discord_error_message(
+                        f"{attachment_error}; fallback failed", fallback_exc
+                    ),
+                }
+
+            return {
+                "sent": True,
+                "status": "sent_without_attachment",
+                "error": f"{attachment_error}, summary sent without attachment.",
+            }
+
+        return {"sent": True, "status": "sent", "error": None}
+
+    try:
+        response = http_post(webhook, json=payload, timeout=DISCORD_TIMEOUT_SECONDS)
         response.raise_for_status()
     except Exception as exc:
         return {
             "sent": False,
             "status": "send_failed",
-            "error": f"Echec envoi Discord ({type(exc).__name__}).",
+            "error": _discord_error_message("Echec envoi Discord", exc),
         }
 
     return {"sent": True, "status": "sent", "error": None}
+
+
+def _discord_error_message(prefix: str, exc: Exception, include_summary_prefix: bool = True) -> str:
+    message = f"{prefix}: {type(exc).__name__}"
+    if include_summary_prefix:
+        return f"{message}."
+    return message
 
 
 def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: bool = False) -> dict[str, Any]:

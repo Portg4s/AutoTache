@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import httpx
+
 from autotache_jobs.notifications import COLOR_REVIEW, COLOR_SUCCESS, send_discord_summary
 
 
@@ -211,7 +213,7 @@ def test_discord_summary_sends_tracking_xlsx_as_attachment_when_file_exists(tmp_
 
     assert result["sent"] is True
     assert captured["webhook_url"] == "https://discord.test/webhook"
-    assert captured["timeout"] == 10
+    assert captured["timeout"] == 30
     assert "payload_json" in captured["data"]
     assert "json" not in captured
     assert file_name == "offres_suivi.xlsx"
@@ -243,9 +245,46 @@ def test_discord_summary_uses_json_when_tracking_xlsx_is_missing(tmp_path: Path)
 
     assert result["sent"] is True
     assert captured["webhook_url"] == "https://discord.test/webhook"
-    assert captured["timeout"] == 10
+    assert captured["timeout"] == 30
     assert captured["payload"]["embeds"]
     assert "Le fichier de suivi cumulatif est joint." not in str(captured["payload"])
+
+
+def test_discord_summary_falls_back_to_json_when_attachment_send_times_out(tmp_path: Path) -> None:
+    tracking_file = tmp_path / "exports" / "offres" / "offres_suivi.xlsx"
+    tracking_file.parent.mkdir(parents=True)
+    tracking_file.write_bytes(b"fake xlsx bytes")
+    calls = []
+
+    def fake_post(webhook_url: str, **kwargs) -> FakeDiscordResponse:
+        calls.append({"webhook_url": webhook_url, **kwargs})
+        if "files" in kwargs:
+            raise httpx.ReadTimeout("attachment upload timed out")
+        return FakeDiscordResponse()
+
+    result = send_discord_summary(
+        "https://discord.test/webhook",
+        {
+            "total_raw": 1,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+            "tracking_xlsx_export_path": str(tracking_file),
+        },
+        http_post=fake_post,
+    )
+
+    assert len(calls) == 2
+    assert "files" in calls[0]
+    assert "data" in calls[0]
+    assert "json" in calls[1]
+    assert "files" not in calls[1]
+    assert calls[0]["timeout"] == 30
+    assert calls[1]["timeout"] == 30
+    assert result["sent"] is True
+    assert result["status"] == "sent_without_attachment"
+    assert "ReadTimeout" in result["error"]
+    assert "https://discord.test/webhook" not in result["error"]
 
 
 def test_discord_summary_without_webhook_returns_clear_status() -> None:

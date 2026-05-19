@@ -21,6 +21,7 @@ Le projet est prevu pour tourner sur Windows avec VS Code, un environnement virt
 - France Travail : source officielle francaise avec authentification API.
 - Adzuna : source internationale configurable par pays, recommandee pour la France.
 - Jooble : source configurable par domaine, recommandee avec `https://fr.jooble.org/api` pour les cles francaises.
+- The Muse : source publique sans cle, configurable par localisation, utile en complement international.
 - Arbeitnow : source sans cle, utile en complement mais moins ciblee France.
 - Remotive : source remote internationale, utile en complement mais moins ciblee France.
 
@@ -37,6 +38,9 @@ sources:
   jooble:
     enabled: true
     base_url: "https://fr.jooble.org/api"
+    max_pages: 1
+  themuse:
+    enabled: false
     max_pages: 1
   arbeitnow:
     enabled: false

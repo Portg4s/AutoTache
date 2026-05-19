@@ -17,6 +17,7 @@ from .sources.base import SourceResult, SourceStats
 from .sources.france_travail import FranceTravailSource
 from .sources.jooble import JoobleSource
 from .sources.remotive import RemotiveSource
+from .sources.themuse import TheMuseSource
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
 
 
@@ -33,6 +34,7 @@ def run_job_search(
     remotive_client: Any | None = None,
     adzuna_client: Any | None = None,
     jooble_client: Any | None = None,
+    themuse_client: Any | None = None,
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
@@ -44,6 +46,7 @@ def run_job_search(
         remotive_client=remotive_client,
         adzuna_client=adzuna_client,
         jooble_client=jooble_client,
+        themuse_client=themuse_client,
         sleep_func=sleep_func,
     )
     raw_offers = [offer for result in source_results for offer in result.raw_offers]
@@ -114,6 +117,7 @@ def _collect_source_results(
     remotive_client: Any | None = None,
     adzuna_client: Any | None = None,
     jooble_client: Any | None = None,
+    themuse_client: Any | None = None,
     sleep_func: Any = time.sleep,
 ) -> list[SourceResult]:
     source_results: list[SourceResult] = []
@@ -171,6 +175,18 @@ def _collect_source_results(
                 keywords=config.sources.jooble.keywords,
                 location=config.sources.jooble.location,
                 http_client=jooble_client,
+            ).collect()
+        )
+
+    if config.sources.themuse.enabled:
+        source_results.append(
+            TheMuseSource(
+                base_url=config.sources.themuse.base_url,
+                max_pages=config.sources.themuse.max_pages,
+                page_size=config.sources.themuse.page_size,
+                keywords=config.sources.themuse.keywords,
+                location=config.sources.themuse.location,
+                http_client=themuse_client,
             ).collect()
         )
 
@@ -239,6 +255,8 @@ def _enabled_source_names(config: Any) -> list[str]:
         enabled.append("Adzuna")
     if config.sources.jooble.enabled:
         enabled.append("Jooble")
+    if config.sources.themuse.enabled:
+        enabled.append("The Muse")
     return enabled
 
 
@@ -259,6 +277,7 @@ def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, 
         "Remotive": _stats_dict(SourceStats(enabled=bool(config.sources.remotive.enabled), fetched=0, kept=0, filtered=0)),
         "Adzuna": _stats_dict(SourceStats(enabled=bool(config.sources.adzuna.enabled), fetched=0, kept=0, filtered=0)),
         "Jooble": _stats_dict(SourceStats(enabled=bool(config.sources.jooble.enabled), fetched=0, kept=0, filtered=0)),
+        "The Muse": _stats_dict(SourceStats(enabled=bool(config.sources.themuse.enabled), fetched=0, kept=0, filtered=0)),
     }
     for result in source_results:
         stats[result.source_name] = _stats_dict(result.stats)

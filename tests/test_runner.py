@@ -176,6 +176,31 @@ def _jooble_client(raw_offers: list[dict], calls: list[str] | None = None) -> ht
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
+def _themuse_offer(offer_id: str = "themuse-front") -> dict:
+    return {
+        "id": offer_id,
+        "name": "Frontend Developer WordPress",
+        "contents": (
+            "Build WordPress interfaces with Elementor, HTML, CSS and JavaScript. "
+            "Remote work possible."
+        ),
+        "company": {"name": "Remote Studio"},
+        "locations": [{"name": "Paris, France"}],
+        "categories": [{"name": "Software Engineering"}],
+        "levels": [{"name": "Mid Level"}],
+        "refs": {"landing_page": f"https://www.themuse.com/jobs/example/{offer_id}"},
+    }
+
+
+def _themuse_client(raw_offers: list[dict], calls: list[str] | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(str(request.url))
+        return httpx.Response(200, json={"page": 1, "page_count": 1, "results": raw_offers})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
 def _fake_scoring(decisions_by_offer_id: dict[str, str]):
     def fake_score(offer: dict) -> dict:
         decision = decisions_by_offer_id[str(offer["id_offre"])]
@@ -957,6 +982,46 @@ def test_runner_can_use_jooble_when_other_sources_disabled(tmp_path: Path) -> No
     }
 
 
+def test_runner_can_use_themuse_when_other_sources_disabled(tmp_path: Path) -> None:
+    themuse_calls = []
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": False},
+                "themuse": {
+                    "enabled": True,
+                    "base_url": "https://example.test/themuse-runner",
+                    "max_pages": 1,
+                    "page_size": 20,
+                    "keywords": ["wordpress"],
+                    "location": "France",
+                },
+            }
+        ),
+        _env(),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        themuse_client=_themuse_client([_themuse_offer("TM1")], calls=themuse_calls),
+        include_debug_offers=True,
+    )
+
+    assert len(themuse_calls) == 1
+    assert "https://example.test/themuse-runner" in themuse_calls[0]
+    assert "page=1" in themuse_calls[0]
+    assert "per_page=20" in themuse_calls[0]
+    assert summary["sources_enabled"] == ["The Muse"]
+    assert summary["source_counts"] == {"The Muse": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["enabled"] is False
+    assert summary["source_stats"]["The Muse"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert summary["debug_offers"][0]["source"] == "The Muse"
+
+
 def test_runner_jooble_enabled_without_key_raises_clear_error(tmp_path: Path) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer()]])
     calls = []
@@ -1090,6 +1155,7 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
         "Remotive": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Adzuna": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Jooble": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+        "The Muse": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
     }
     assert summary["total_raw"] == 0
     assert summary["total_normalized"] == 0

@@ -55,6 +55,12 @@ filters:
     assert config.sources.jooble.max_pages == 1
     assert config.sources.jooble.keywords == []
     assert config.sources.jooble.location == ""
+    assert config.sources.themuse.enabled is False
+    assert config.sources.themuse.base_url == "https://www.themuse.com/api/public/jobs"
+    assert config.sources.themuse.max_pages == 1
+    assert config.sources.themuse.page_size == 20
+    assert config.sources.themuse.keywords == []
+    assert config.sources.themuse.location == ""
     assert "Configuration chargee avec succes." in summarize_config(config)
 
 
@@ -133,6 +139,16 @@ sources:
       - " "
       - developpeur
     location: Dijon
+  themuse:
+    enabled: true
+    base_url: "https://www.themuse.com/api/public/jobs"
+    max_pages: 2
+    page_size: 10
+    keywords:
+      - frontend
+      - " "
+      - designer
+    location: France
 """,
         encoding="utf-8",
     )
@@ -158,6 +174,12 @@ sources:
     assert config.sources.jooble.max_pages == 2
     assert config.sources.jooble.keywords == ["web", "developpeur"]
     assert config.sources.jooble.location == "Dijon"
+    assert config.sources.themuse.enabled is True
+    assert config.sources.themuse.base_url == "https://www.themuse.com/api/public/jobs"
+    assert config.sources.themuse.max_pages == 2
+    assert config.sources.themuse.page_size == 10
+    assert config.sources.themuse.keywords == ["frontend", "designer"]
+    assert config.sources.themuse.location == "France"
     assert "- Source France Travail activee: non" in summary
     assert "- Source Arbeitnow activee: oui" in summary
     assert "- Pages max Arbeitnow: 2" in summary
@@ -176,3 +198,9 @@ sources:
     assert "- Pages max Jooble: 2" in summary
     assert "- Keywords Jooble: 2" in summary
     assert "- Location Jooble: Dijon" in summary
+    assert "- Source The Muse activee: oui" in summary
+    assert "- Base URL The Muse: https://www.themuse.com/api/public/jobs" in summary
+    assert "- Pages max The Muse: 2" in summary
+    assert "- Resultats par page The Muse: 10" in summary
+    assert "- Keywords The Muse: 2" in summary
+    assert "- Location The Muse: France" in summary

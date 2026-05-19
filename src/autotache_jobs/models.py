@@ -106,6 +106,27 @@ class JoobleSourceConfig(BaseModel):
         return value.strip() if value else ""
 
 
+class TheMuseSourceConfig(BaseModel):
+    """The Muse source settings."""
+
+    enabled: bool = False
+    base_url: str = "https://www.themuse.com/api/public/jobs"
+    max_pages: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1)
+    keywords: list[str] = Field(default_factory=list)
+    location: str = ""
+
+    @field_validator("keywords")
+    @classmethod
+    def clean_terms(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value and value.strip()]
+
+    @field_validator("base_url", "location")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return value.strip() if value else ""
+
+
 class SourcesConfig(BaseModel):
     """Offer sources loaded from the local config file."""
 
@@ -114,6 +135,7 @@ class SourcesConfig(BaseModel):
     remotive: RemotiveSourceConfig = Field(default_factory=RemotiveSourceConfig)
     adzuna: AdzunaSourceConfig = Field(default_factory=AdzunaSourceConfig)
     jooble: JoobleSourceConfig = Field(default_factory=JoobleSourceConfig)
+    themuse: TheMuseSourceConfig = Field(default_factory=TheMuseSourceConfig)
 
 
 class AppConfig(BaseModel):

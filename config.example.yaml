@@ -88,6 +88,16 @@ sources:
       - web
       - developpeur
     location: Dijon
+  themuse:
+    enabled: false
+    base_url: "https://www.themuse.com/api/public/jobs"
+    max_pages: 1
+    page_size: 20
+    keywords:
+      - web developer
+      - frontend
+      - designer
+    location: France
 
 notifications:
   discord_enabled: false

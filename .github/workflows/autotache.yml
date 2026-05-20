@@ -48,6 +48,7 @@ jobs:
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python - <<'PY'
@@ -60,6 +61,7 @@ jobs:
               "ADZUNA_APP_ID": os.environ["ADZUNA_APP_ID"],
               "ADZUNA_APP_KEY": os.environ["ADZUNA_APP_KEY"],
               "JOOBLE_API_KEY": os.environ["JOOBLE_API_KEY"],
+              "JSEARCH_API_KEY": os.environ["JSEARCH_API_KEY"],
               "DISCORD_WEBHOOK_URL": os.environ["DISCORD_WEBHOOK_URL"],
               "FRANCE_TRAVAIL_SCOPE": "api_offresdemploiv2 o2dsoffre",
               "FRANCE_TRAVAIL_TOKEN_URL": "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
@@ -136,6 +138,20 @@ jobs:
                 - web
                 - developpeur
               location: Dijon
+            jsearch:
+              enabled: true
+              base_url: "https://jsearch.p.rapidapi.com/search-v2"
+              host: "jsearch.p.rapidapi.com"
+              max_pages: 3
+              queries:
+                - "informatique Bourgogne Franche-Comté France"
+              country: fr
+              language: fr
+              location: ""
+              radius:
+              date_posted: month
+              employment_types:
+                - FULLTIME
             arbeitnow:
               enabled: false
               max_pages: 1

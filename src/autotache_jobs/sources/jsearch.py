@@ -206,9 +206,13 @@ def _json(response: httpx.Response) -> dict[str, Any]:
 
 def _data(payload: dict[str, Any]) -> list[dict]:
     data = payload.get("data", [])
-    if not isinstance(data, list):
-        return []
-    return [offer for offer in data if isinstance(offer, dict)]
+    if isinstance(data, list):
+        return [offer for offer in data if isinstance(offer, dict)]
+    if isinstance(data, dict):
+        jobs = data.get("jobs", [])
+        if isinstance(jobs, list):
+            return [offer for offer in jobs if isinstance(offer, dict)]
+    return []
 
 
 def _location_text(raw_offer: dict) -> str:

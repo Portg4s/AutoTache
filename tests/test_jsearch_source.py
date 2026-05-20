@@ -65,6 +65,19 @@ def test_collect_raw_offers_returns_multiple_results() -> None:
     assert source.collect_raw_offers() == [{"job_id": "A1"}, {"job_id": "A2"}]
 
 
+def test_collect_raw_offers_accepts_search_v2_jobs_payload_without_following_cursor() -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"data": {"jobs": [{"job_id": "A1"}, {"job_id": "A2"}], "cursor": "fake"}})
+
+    source = _source_with_transport(httpx.MockTransport(handler))
+
+    assert source.collect_raw_offers() == [{"job_id": "A1"}, {"job_id": "A2"}]
+    assert len(calls) == 1
+
+
 def test_normalize_jsearch_offer_handles_missing_fields() -> None:
     normalized = normalize_jsearch_offer({"job_id": "minimal"})
 

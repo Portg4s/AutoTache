@@ -26,3 +26,10 @@ config.yaml
 pytest_run_autotache_sources/
 
 .pytest_tmp/
+
+# Personal profile / CV generation
+profile/*.yaml
+profile/*.yml
+profile/*.docx
+profile/*.pdf
+generated_cv/

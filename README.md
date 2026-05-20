@@ -21,6 +21,7 @@ Le projet est prevu pour tourner sur Windows avec VS Code, un environnement virt
 - France Travail : source officielle francaise avec authentification API.
 - Adzuna : source internationale configurable par pays, recommandee pour la France.
 - Jooble : source configurable par domaine, recommandee avec `https://fr.jooble.org/api` pour les cles francaises.
+- JSearch : source RapidAPI desactivee par defaut, prevue d'abord pour tests locaux avec quota prudent.
 - The Muse : source publique sans cle, configurable par localisation, utile en complement international.
 - Arbeitnow : source sans cle, utile en complement mais moins ciblee France.
 - Remotive : source remote internationale, utile en complement mais moins ciblee France.
@@ -39,6 +40,11 @@ sources:
     enabled: true
     base_url: "https://fr.jooble.org/api"
     max_pages: 1
+  jsearch:
+    enabled: false
+    max_pages: 1
+    queries:
+      - "informatique Dijon"
   themuse:
     enabled: false
     max_pages: 1
@@ -48,7 +54,7 @@ sources:
     enabled: false
 ```
 
-`max_pages: 1` est volontairement prudent pour Jooble afin de limiter les requetes.
+`max_pages: 1` est volontairement prudent pour Jooble et JSearch afin de limiter les requetes. Pour JSearch, une query avec `num_pages: 1` consomme environ un credit RapidAPI.
 
 ## Fichiers De Configuration
 

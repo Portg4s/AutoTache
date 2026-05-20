@@ -15,6 +15,7 @@ from .sources.adzuna import AdzunaSource
 from .sources.arbeitnow import ArbeitnowSource
 from .sources.base import SourceResult, SourceStats
 from .sources.france_travail import FranceTravailSource
+from .sources.jsearch import JSearchSource
 from .sources.jooble import JoobleSource
 from .sources.remotive import RemotiveSource
 from .sources.themuse import TheMuseSource
@@ -35,6 +36,7 @@ def run_job_search(
     adzuna_client: Any | None = None,
     jooble_client: Any | None = None,
     themuse_client: Any | None = None,
+    jsearch_client: Any | None = None,
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
@@ -47,6 +49,7 @@ def run_job_search(
         adzuna_client=adzuna_client,
         jooble_client=jooble_client,
         themuse_client=themuse_client,
+        jsearch_client=jsearch_client,
         sleep_func=sleep_func,
     )
     raw_offers = [offer for result in source_results for offer in result.raw_offers]
@@ -118,6 +121,7 @@ def _collect_source_results(
     adzuna_client: Any | None = None,
     jooble_client: Any | None = None,
     themuse_client: Any | None = None,
+    jsearch_client: Any | None = None,
     sleep_func: Any = time.sleep,
 ) -> list[SourceResult]:
     source_results: list[SourceResult] = []
@@ -190,6 +194,26 @@ def _collect_source_results(
             ).collect()
         )
 
+    if config.sources.jsearch.enabled:
+        source_results.append(
+            JSearchSource(
+                api_key=_jsearch_api_key(env_settings),
+                base_url=config.sources.jsearch.base_url,
+                host=config.sources.jsearch.host,
+                max_pages=config.sources.jsearch.max_pages,
+                queries=config.sources.jsearch.queries,
+                country=config.sources.jsearch.country,
+                language=config.sources.jsearch.language,
+                location=config.sources.jsearch.location,
+                radius=config.sources.jsearch.radius,
+                date_posted=config.sources.jsearch.date_posted,
+                work_from_home=config.sources.jsearch.work_from_home,
+                employment_types=config.sources.jsearch.employment_types,
+                fields=config.sources.jsearch.fields,
+                http_client=jsearch_client,
+            ).collect()
+        )
+
     return source_results
 
 
@@ -257,6 +281,8 @@ def _enabled_source_names(config: Any) -> list[str]:
         enabled.append("Jooble")
     if config.sources.themuse.enabled:
         enabled.append("The Muse")
+    if config.sources.jsearch.enabled:
+        enabled.append("JSearch")
     return enabled
 
 
@@ -278,6 +304,7 @@ def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, 
         "Adzuna": _stats_dict(SourceStats(enabled=bool(config.sources.adzuna.enabled), fetched=0, kept=0, filtered=0)),
         "Jooble": _stats_dict(SourceStats(enabled=bool(config.sources.jooble.enabled), fetched=0, kept=0, filtered=0)),
         "The Muse": _stats_dict(SourceStats(enabled=bool(config.sources.themuse.enabled), fetched=0, kept=0, filtered=0)),
+        "JSearch": _stats_dict(SourceStats(enabled=bool(config.sources.jsearch.enabled), fetched=0, kept=0, filtered=0)),
     }
     for result in source_results:
         stats[result.source_name] = _stats_dict(result.stats)
@@ -296,6 +323,13 @@ def _jooble_api_key(env_settings: Any) -> str:
     api_key = str(getattr(env_settings, "jooble_api_key", "") or "").strip()
     if not api_key:
         raise RuntimeError("Cle Jooble manquante ou invalide dans l'environnement local.")
+    return api_key
+
+
+def _jsearch_api_key(env_settings: Any) -> str:
+    api_key = str(getattr(env_settings, "jsearch_api_key", "") or "").strip()
+    if not api_key:
+        raise RuntimeError("Cle JSearch manquante ou invalide dans l'environnement local.")
     return api_key
 
 

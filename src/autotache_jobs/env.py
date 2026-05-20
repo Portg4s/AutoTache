@@ -39,6 +39,7 @@ def load_france_travail_env(env_path: Path = Path(".env")) -> FranceTravailEnv:
         "adzuna_app_id": os.getenv("ADZUNA_APP_ID", ""),
         "adzuna_app_key": os.getenv("ADZUNA_APP_KEY", ""),
         "jooble_api_key": os.getenv("JOOBLE_API_KEY", ""),
+        "jsearch_api_key": os.getenv("JSEARCH_API_KEY", ""),
     }
 
     try:

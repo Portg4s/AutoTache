@@ -98,6 +98,21 @@ sources:
       - frontend
       - designer
     location: France
+  jsearch:
+    enabled: false
+    base_url: "https://jsearch.p.rapidapi.com/search-v2"
+    host: "jsearch.p.rapidapi.com"
+    max_pages: 1
+    queries:
+      - "informatique Dijon"
+    country: fr
+    language: fr
+    location: Dijon
+    radius: 50
+    date_posted: month
+    employment_types:
+      - FULLTIME
+      - CONTRACT
 
 notifications:
   discord_enabled: false

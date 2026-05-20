@@ -127,6 +127,34 @@ class TheMuseSourceConfig(BaseModel):
         return value.strip() if value else ""
 
 
+class JSearchSourceConfig(BaseModel):
+    """JSearch source settings."""
+
+    enabled: bool = False
+    base_url: str = "https://jsearch.p.rapidapi.com/search-v2"
+    host: str = "jsearch.p.rapidapi.com"
+    max_pages: int = Field(default=1, ge=1, le=20)
+    queries: list[str] = Field(default_factory=list)
+    country: str = "fr"
+    language: str = "fr"
+    location: str = ""
+    radius: int | None = Field(default=None, ge=0)
+    date_posted: str = ""
+    work_from_home: bool | None = None
+    employment_types: list[str] = Field(default_factory=list)
+    fields: str = ""
+
+    @field_validator("queries", "employment_types")
+    @classmethod
+    def clean_terms(cls, values: list[str]) -> list[str]:
+        return [value.strip() for value in values if value and value.strip()]
+
+    @field_validator("base_url", "host", "country", "language", "location", "date_posted", "fields")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return value.strip() if value else ""
+
+
 class SourcesConfig(BaseModel):
     """Offer sources loaded from the local config file."""
 
@@ -136,6 +164,7 @@ class SourcesConfig(BaseModel):
     adzuna: AdzunaSourceConfig = Field(default_factory=AdzunaSourceConfig)
     jooble: JoobleSourceConfig = Field(default_factory=JoobleSourceConfig)
     themuse: TheMuseSourceConfig = Field(default_factory=TheMuseSourceConfig)
+    jsearch: JSearchSourceConfig = Field(default_factory=JSearchSourceConfig)
 
 
 class AppConfig(BaseModel):
@@ -174,6 +203,7 @@ class FranceTravailEnv(BaseModel):
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""
     jooble_api_key: str = ""
+    jsearch_api_key: str = ""
 
     @field_validator("client_id", "client_secret")
     @classmethod
@@ -182,7 +212,7 @@ class FranceTravailEnv(BaseModel):
             raise ValueError("valeur requise")
         return value.strip()
 
-    @field_validator("discord_webhook_url", "adzuna_app_id", "adzuna_app_key", "jooble_api_key")
+    @field_validator("discord_webhook_url", "adzuna_app_id", "adzuna_app_key", "jooble_api_key", "jsearch_api_key")
     @classmethod
     def clean_optional_secret(cls, value: str) -> str:
         return value.strip() if value else ""

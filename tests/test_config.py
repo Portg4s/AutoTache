@@ -61,6 +61,14 @@ filters:
     assert config.sources.themuse.page_size == 20
     assert config.sources.themuse.keywords == []
     assert config.sources.themuse.location == ""
+    assert config.sources.jsearch.enabled is False
+    assert config.sources.jsearch.base_url == "https://jsearch.p.rapidapi.com/search-v2"
+    assert config.sources.jsearch.host == "jsearch.p.rapidapi.com"
+    assert config.sources.jsearch.max_pages == 1
+    assert config.sources.jsearch.queries == []
+    assert config.sources.jsearch.country == "fr"
+    assert config.sources.jsearch.language == "fr"
+    assert config.sources.jsearch.location == ""
     assert "Configuration chargee avec succes." in summarize_config(config)
 
 
@@ -149,6 +157,24 @@ sources:
       - " "
       - designer
     location: France
+  jsearch:
+    enabled: true
+    base_url: "https://jsearch.p.rapidapi.com/search-v2"
+    host: "jsearch.p.rapidapi.com"
+    max_pages: 2
+    queries:
+      - informatique Dijon
+      - " "
+      - frontend Lyon
+    country: fr
+    language: fr
+    location: Dijon
+    radius: 50
+    date_posted: month
+    employment_types:
+      - FULLTIME
+      - " "
+      - CONTRACT
 """,
         encoding="utf-8",
     )
@@ -180,6 +206,17 @@ sources:
     assert config.sources.themuse.page_size == 10
     assert config.sources.themuse.keywords == ["frontend", "designer"]
     assert config.sources.themuse.location == "France"
+    assert config.sources.jsearch.enabled is True
+    assert config.sources.jsearch.base_url == "https://jsearch.p.rapidapi.com/search-v2"
+    assert config.sources.jsearch.host == "jsearch.p.rapidapi.com"
+    assert config.sources.jsearch.max_pages == 2
+    assert config.sources.jsearch.queries == ["informatique Dijon", "frontend Lyon"]
+    assert config.sources.jsearch.country == "fr"
+    assert config.sources.jsearch.language == "fr"
+    assert config.sources.jsearch.location == "Dijon"
+    assert config.sources.jsearch.radius == 50
+    assert config.sources.jsearch.date_posted == "month"
+    assert config.sources.jsearch.employment_types == ["FULLTIME", "CONTRACT"]
     assert "- Source France Travail activee: non" in summary
     assert "- Source Arbeitnow activee: oui" in summary
     assert "- Pages max Arbeitnow: 2" in summary
@@ -204,3 +241,9 @@ sources:
     assert "- Resultats par page The Muse: 10" in summary
     assert "- Keywords The Muse: 2" in summary
     assert "- Location The Muse: France" in summary
+    assert "- Source JSearch activee: oui" in summary
+    assert "- Base URL JSearch: https://jsearch.p.rapidapi.com/search-v2" in summary
+    assert "- Host JSearch: jsearch.p.rapidapi.com" in summary
+    assert "- Pages max JSearch: 2" in summary
+    assert "- Queries JSearch: 2" in summary
+    assert "- Location JSearch: Dijon" in summary

@@ -48,6 +48,7 @@ def _env(**overrides) -> FranceTravailEnv:
         "adzuna_app_id": "fake-adzuna-id",
         "adzuna_app_key": "fake-adzuna-key",
         "jooble_api_key": "fake-jooble-key",
+        "jsearch_api_key": "fake-jsearch-key",
     }
     values.update(overrides)
     return FranceTravailEnv(
@@ -172,6 +173,33 @@ def _jooble_client(raw_offers: list[dict], calls: list[str] | None = None) -> ht
         if calls is not None:
             calls.append(str(request.url))
         return httpx.Response(200, json={"jobs": raw_offers})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _jsearch_offer(offer_id: str = "jsearch-front") -> dict:
+    return {
+        "job_id": offer_id,
+        "job_title": "Frontend Developer WordPress",
+        "job_description": (
+            "Build WordPress interfaces with Elementor, HTML, CSS and JavaScript. "
+            "Remote work possible."
+        ),
+        "employer_name": "Remote Studio",
+        "job_city": "Dijon",
+        "job_state": "Bourgogne-Franche-Comte",
+        "job_country": "FR",
+        "job_employment_type": "FULLTIME",
+        "job_is_remote": True,
+        "job_apply_link": f"https://example.test/apply/{offer_id}",
+    }
+
+
+def _jsearch_client(raw_offers: list[dict], calls: list[str] | None = None) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(str(request.url))
+        return httpx.Response(200, json={"data": raw_offers})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -1022,6 +1050,73 @@ def test_runner_can_use_themuse_when_other_sources_disabled(tmp_path: Path) -> N
     assert summary["debug_offers"][0]["source"] == "The Muse"
 
 
+def test_runner_can_use_jsearch_when_other_sources_disabled(tmp_path: Path) -> None:
+    jsearch_calls = []
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": False},
+                "jsearch": {
+                    "enabled": True,
+                    "base_url": "https://example.test/jsearch-runner",
+                    "host": "example.test",
+                    "max_pages": 1,
+                    "queries": ["informatique Dijon"],
+                    "country": "fr",
+                    "language": "fr",
+                    "location": "Dijon",
+                    "radius": 50,
+                    "date_posted": "month",
+                    "employment_types": ["FULLTIME", "CONTRACT"],
+                },
+            }
+        ),
+        _env(),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        jsearch_client=_jsearch_client([_jsearch_offer("JS1")], calls=jsearch_calls),
+        include_debug_offers=True,
+    )
+
+    assert len(jsearch_calls) == 1
+    assert "https://example.test/jsearch-runner" in jsearch_calls[0]
+    assert "query=informatique+Dijon" in jsearch_calls[0]
+    assert "num_pages=1" in jsearch_calls[0]
+    assert summary["sources_enabled"] == ["JSearch"]
+    assert summary["source_counts"] == {"JSearch": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["enabled"] is False
+    assert summary["source_stats"]["JSearch"] == {
+        "enabled": True,
+        "fetched": 1,
+        "kept": 1,
+        "filtered": 0,
+    }
+    assert summary["debug_offers"][0]["source"] == "JSearch"
+
+
+def test_runner_jsearch_enabled_without_key_raises_clear_error(tmp_path: Path) -> None:
+    calls = []
+
+    try:
+        run_job_search(
+            _config(sources={"france_travail": {"enabled": False}, "jsearch": {"enabled": True}}),
+            _env(jsearch_api_key=""),
+            jsearch_client=_jsearch_client([_jsearch_offer()], calls=calls),
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("JSearch activee sans cle devrait echouer.")
+
+    assert calls == []
+    assert "Cle JSearch manquante" in message
+    assert "fake-jsearch-key" not in message
+    assert "JSEARCH_API_KEY" not in message
+
+
 def test_runner_jooble_enabled_without_key_raises_clear_error(tmp_path: Path) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer()]])
     calls = []
@@ -1156,6 +1251,7 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
         "Adzuna": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "Jooble": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
         "The Muse": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
+        "JSearch": {"enabled": False, "fetched": 0, "kept": 0, "filtered": 0},
     }
     assert summary["total_raw"] == 0
     assert summary["total_normalized"] == 0

@@ -251,7 +251,66 @@ def test_dijon_or_21_location_gets_points() -> None:
         }
     )
 
-    assert result["score_details"]["localisation"]["score"] == 10
+    assert result["score_details"]["localisation"]["score"] == 15
+    assert result["score_details"]["localisation"]["level"] == "local"
+
+
+def test_beaune_location_gets_strong_local_points() -> None:
+    result = score_offer({"localisation": "Beaune 21200"})
+
+    assert result["score_details"]["localisation"]["score"] == 15
+    assert result["score_details"]["localisation"]["level"] == "local"
+
+
+def test_near_dijon_city_gets_strong_local_points() -> None:
+    result = score_offer({"localisation": "Saint-Apollinaire"})
+    other_result = score_offer({"localisation": "Quetigny"})
+
+    assert result["score_details"]["localisation"]["score"] == 15
+    assert result["score_details"]["localisation"]["level"] == "local"
+    assert other_result["score_details"]["localisation"]["score"] == 15
+    assert other_result["score_details"]["localisation"]["level"] == "local"
+
+
+def test_cote_dor_or_21xxx_location_gets_department_points() -> None:
+    cote_dor = score_offer({"localisation": "Cote-d'Or"})
+    postal_code = score_offer({"localisation": "Chatillon-sur-Seine 21400"})
+
+    assert cote_dor["score_details"]["localisation"]["score"] == 12
+    assert cote_dor["score_details"]["localisation"]["level"] == "department"
+    assert postal_code["score_details"]["localisation"]["score"] == 12
+    assert postal_code["score_details"]["localisation"]["level"] == "department"
+
+
+def test_bourgogne_franche_comte_or_besancon_location_gets_region_points() -> None:
+    region = score_offer({"localisation": "Bourgogne-Franche-Comte"})
+    city = score_offer({"localisation": "Besancon"})
+
+    assert region["score_details"]["localisation"]["score"] == 8
+    assert region["score_details"]["localisation"]["level"] == "region"
+    assert city["score_details"]["localisation"]["score"] == 8
+    assert city["score_details"]["localisation"]["level"] == "region"
+
+
+def test_paris_location_gets_no_geographic_bonus() -> None:
+    result = score_offer({"localisation": "Paris 75010"})
+
+    assert result["score_details"]["localisation"]["score"] == 0
+    assert result["score_details"]["localisation"]["level"] == "none"
+
+
+def test_same_web_offer_scores_higher_in_dijon_than_paris() -> None:
+    base_offer = {
+        "titre": "Developpeur WordPress",
+        "description": "Creation de sites WordPress avec Elementor HTML CSS.",
+        "technologies": ["WordPress", "Elementor", "HTML", "CSS"],
+        "type_contrat": "CDI",
+    }
+
+    dijon = score_offer({**base_offer, "localisation": "Dijon 21000"})
+    paris = score_offer({**base_offer, "localisation": "Paris 75010"})
+
+    assert dijon["score_total"] > paris["score_total"]
 
 
 def test_cdi_or_cdd_contract_gets_points() -> None:

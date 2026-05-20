@@ -146,6 +146,44 @@ SOFT_PENALTY_TERMS = [
     "calcul scientifique",
 ]
 
+LOCAL_LOCATION_SIGNALS = [
+    "dijon",
+    "21000",
+    "beaune",
+    "21200",
+    "saint-apollinaire",
+    "saint apollinaire",
+    "chenove",
+    "quetigny",
+    "talant",
+    "fontaine-les-dijon",
+    "fontaine les dijon",
+    "longvic",
+    "marsannay-la-cote",
+    "marsannay la cote",
+]
+
+DEPARTMENT_LOCATION_SIGNALS = [
+    "cote d or",
+    "cote-d-or",
+]
+
+REGION_LOCATION_SIGNALS = [
+    "bourgogne",
+    "bourgogne-franche-comte",
+    "bourgogne franche comte",
+    "franche-comte",
+    "franche comte",
+    "besancon",
+    "chalon-sur-saone",
+    "chalon sur saone",
+    "macon",
+    "auxerre",
+    "montbeliard",
+    "belfort",
+    "nevers",
+]
+
 
 def score_offer(offer: dict) -> dict:
     """Score an offer with local rules only."""
@@ -238,9 +276,25 @@ def _score_technology_signals(text: str) -> dict[str, Any]:
 
 
 def _score_location(location: str) -> dict[str, Any]:
-    local_patterns = ["dijon", "cote d or", "cote-d-or", "bourgogne", "21000", "21"]
-    matches = _matched_terms(location, local_patterns)
-    return {"score": 10 if matches else 0, "matches": matches}
+    local_matches = _matched_terms(location, LOCAL_LOCATION_SIGNALS)
+    if local_matches:
+        return {"score": 15, "matches": local_matches, "level": "local"}
+
+    department_matches = _matched_terms(location, DEPARTMENT_LOCATION_SIGNALS)
+    if _has_cote_dor_name(location) and "cote d or" not in department_matches:
+        department_matches.append("cote d or")
+    if _has_cote_dor_postal_code(location) and "code postal 21xxx" not in department_matches:
+        department_matches.append("code postal 21xxx")
+    elif _has_department_21(location) and "departement 21" not in department_matches:
+        department_matches.append("departement 21")
+    if department_matches:
+        return {"score": 12, "matches": department_matches, "level": "department"}
+
+    region_matches = _matched_terms(location, REGION_LOCATION_SIGNALS)
+    if region_matches:
+        return {"score": 8, "matches": region_matches, "level": "region"}
+
+    return {"score": 0, "matches": [], "level": "none"}
 
 
 def _score_remote(remote_text: str) -> dict[str, Any]:
@@ -310,6 +364,18 @@ def _contains_term(text: str, term: str) -> bool:
     if len(term) <= 3 and term.isalnum():
         return bool(re.search(rf"\b{re.escape(term)}\b", text))
     return term in text
+
+
+def _has_cote_dor_postal_code(location: str) -> bool:
+    return bool(re.search(r"\b21\d{3}\b", location))
+
+
+def _has_cote_dor_name(location: str) -> bool:
+    return bool(re.search(r"\bcote\s*[-'â€™ ]\s*d\s*[-'â€™ ]?\s*or\b", location))
+
+
+def _has_department_21(location: str) -> bool:
+    return bool(re.search(r"\b(?:departement|dept|dep|dpt)\s*21\b|\b21\b", location))
 
 
 def _normalize_text(value: Any) -> str:

@@ -24,6 +24,15 @@ class CvOfferInfo:
 
 
 @dataclass(frozen=True)
+class CvIdentity:
+    name: str
+    title: str
+    location: str
+    email: str
+    phone: str
+
+
+@dataclass(frozen=True)
 class CvSkills:
     confirmed: list[str]
     complementary: list[str]
@@ -54,6 +63,7 @@ class CvAnalysis:
 
 @dataclass(frozen=True)
 class TargetedCvData:
+    identity: CvIdentity
     offer_info: CvOfferInfo
     proposed_title: str
     targeted_summary: str
@@ -74,6 +84,7 @@ def build_targeted_cv_data(offer: dict[str, Any], profile: CvProfile) -> Targete
     )
 
     return TargetedCvData(
+        identity=_identity_info(profile.raw),
         offer_info=_offer_info(offer),
         proposed_title=_proposed_title(offer, skills),
         targeted_summary=_targeted_summary(profile_summary, skills),
@@ -95,6 +106,20 @@ def build_targeted_cv_data(offer: dict[str, Any], profile: CvProfile) -> Targete
                 "Ne pas scraper l'URL de l'offre pour cette V1.",
             ],
         ),
+    )
+
+
+def _identity_info(raw: dict[str, Any]) -> CvIdentity:
+    identity = raw.get("identity")
+    if not isinstance(identity, dict):
+        identity = {}
+
+    return CvIdentity(
+        name=_clean_text(identity.get("name")),
+        title=_clean_text(identity.get("title")),
+        location=_clean_text(identity.get("location")),
+        email=_clean_text(identity.get("email")),
+        phone=_clean_text(identity.get("phone")),
     )
 
 
@@ -275,6 +300,10 @@ def _join_values(value: Any, *, separator: str = ", ") -> str:
             if item is not None and str(item).strip()
         )
     return str(value).strip()
+
+
+def _clean_text(value: Any) -> str:
+    return "" if value is None else str(value).strip()
 
 
 def _clean_lines(values: list[Any]) -> list[str]:

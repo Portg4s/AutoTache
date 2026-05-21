@@ -15,6 +15,12 @@ def test_generates_docx_from_targeted_cv_data_without_modifying_sources(tmp_path
         """
 profile_summary:
   short: Resume court issu de profile_summary.
+identity:
+  name: Bastien Test
+  title: Developpeur web
+  location: Dijon
+  email: bastien@example.test
+  phone: "0102030405"
 competences_fortes:
   - HTML
   - CSS
@@ -73,18 +79,29 @@ portfolio:
     assert output_path.exists()
     assert output_path.parent == tmp_path / "generated"
     assert output_path.name == "CV_Bastien_agence_test_integrateur_front_react.docx"
+    assert output_path.stat().st_size > 0
 
     document = Document(output_path)
     content = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    assert "Bastien Test" in content
+    assert "Developpeur web | Dijon | bastien@example.test | 0102030405" in content
     assert "CV ciblé" in content
-    assert "CV proposé" in content
+    assert "Profil ciblé" in content
     assert "Titre proposé" in content
     assert "Accroche ciblée" in content
     assert "Compétences clés" in content
-    assert "Expériences à valoriser" in content
-    assert "Projets à valoriser" in content
+    assert "Compétences confirmées pertinentes" in content
+    assert "Compétences complémentaires" in content
+    assert "Compétences à confirmer" in content
+    assert "React (à confirmer, ne pas présenter comme maîtrisé)" in content
+    assert "Expériences" in content
+    assert "Projets" in content
     assert "Formation" in content
     assert "Analyse de correspondance" in content
+    assert "Points de prudence" in content
+    assert "Agence Test" in content
+    assert "Dijon | CDI | Non renseignee | Score 90" in content
+    assert "URL: https://example.test/job" in content
 
     assert profile_path.read_bytes() == profile_before
     assert offer == offer_before

@@ -16,11 +16,14 @@ profile_summary:
 competences_fortes:
   - HTML
   - CSS
+competences_moyennes:
+  - JavaScript
 to_confirm:
   - React
 experiences:
   - title: Integrateur web
     company: Studio Local
+    period: 2021 -> 2024
     summary: Integration responsive documentee dans le profil.
     achievements:
       - Livraison de pages accessibles
@@ -31,6 +34,11 @@ experiences:
         technologies:
           - HTML
           - CSS
+education:
+  - degree: DUT Informatique
+    school: IUT
+    location: Dijon
+    period: 2018 -> 2020
 portfolio:
   public_projects:
     - name: Portfolio public test
@@ -46,7 +54,16 @@ portfolio:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.append(["titre", "entreprise", "description", "technologies", "decision", "score_total"])
-    worksheet.append(["Integrateur front React", "Agence Test", "HTML CSS React", "HTML, CSS, React", "Pertinent", 90])
+    worksheet.append(
+        [
+            "Integrateur front React",
+            "Agence Test",
+            "HTML CSS JavaScript React",
+            "HTML, CSS, JavaScript, React",
+            "Pertinent",
+            90,
+        ]
+    )
     workbook.save(xlsx_path)
 
     profile_before = profile_path.read_bytes()
@@ -58,16 +75,28 @@ portfolio:
 
     content = output_path.read_text(encoding="utf-8")
     assert output_path.parent == tmp_path / "generated"
+    assert "# CV ciblé" in content
+    assert "## CV proposé" in content
+    assert "## Analyse de correspondance" in content
+    assert "### Expériences à valoriser" in content
+    assert "### Projets à valoriser" in content
+    assert "### Formation" in content
     assert "Agence Test" in content
     assert "Integrateur front React" in content
     for section in SECTIONS:
         assert f"## {section}" in content
     assert "Resume court issu de profile_summary." in content
-    assert "Integrateur web - Studio Local" in content
+    assert "#### Integrateur web - Studio Local (2021 -> 2024)" in content
     assert "Livraison de pages accessibles" in content
     assert "Refonte vitrine" in content
+    assert "- Technologies: HTML, CSS" in content
     assert "Portfolio public test" in content
     assert "https://example.test/portfolio" in content
+    assert "- Technologies: WordPress" in content
+    assert "- DUT Informatique — IUT — Dijon — 2018 -> 2020" in content
+    assert "#### Compétences confirmées pertinentes\n- HTML\n- CSS" in content
+    assert "#### Compétences complémentaires\n- JavaScript" in content
+    assert "#### Compétences à confirmer\n- React (à confirmer, ne pas présenter comme maîtrisé)" in content
     assert "React: à confirmer, ne pas présenter comme maîtrisé." in content
     assert "Ne jamais inventer une expérience." in content
     assert profile_path.read_bytes() == profile_before

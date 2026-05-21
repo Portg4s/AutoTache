@@ -12,13 +12,32 @@ from autotache_jobs.cv.profile import CvProfile
 
 OFFER_MATCH_FIELDS = ["titre", "description", "technologies", "score_reason", "type_contrat"]
 STOP_WORDS = {
+    "100",
     "avec",
+    "candidat",
+    "candidats",
+    "cdi",
     "dans",
     "des",
+    "dijon",
+    "domaine",
+    "entreprise",
+    "france",
+    "grace",
+    "grâce",
+    "localisation",
+    "metier",
+    "métier",
     "une",
     "pour",
     "les",
     "sur",
+    "score",
+    "technologies",
+    "teletravail",
+    "télétravail",
+    "verifier",
+    "vérifier",
     "vous",
     "nous",
     "notre",
@@ -77,13 +96,17 @@ def _offer_keywords(offer: dict[str, Any]) -> list[str]:
     values: list[str] = []
     technologies = offer.get("technologies")
     if technologies:
-        values.extend(_split_technologies(str(technologies)))
+        values.extend(
+            technology
+            for technology in _split_technologies(str(technologies))
+            if _is_useful_keyword(technology, offer)
+        )
 
     text = _offer_text(offer)
     values.extend(
         token
         for token in re.findall(r"[A-Za-zÀ-ÿ0-9+#.-]{3,}", text)
-        if _normalize(token) not in STOP_WORDS
+        if _is_useful_keyword(token, offer)
     )
     return _dedupe(values)[:40]
 
@@ -95,7 +118,22 @@ def _split_technologies(value: str) -> list[str]:
 def _normalize(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value.casefold())
     without_accents = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return re.sub(r"\s+", " ", without_accents).strip()
+    cleaned = re.sub(r"^[^\w+#]+|[^\w+#]+$", "", without_accents)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _is_useful_keyword(token: str, offer: dict[str, Any]) -> bool:
+    normalized = _normalize(token)
+    if normalized in STOP_WORDS:
+        return False
+    if normalized.isdigit():
+        return False
+
+    localisation = _normalize(str(offer.get("localisation") or ""))
+    if normalized and normalized in localisation:
+        return False
+
+    return True
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -107,4 +145,3 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(value)
     return result
-

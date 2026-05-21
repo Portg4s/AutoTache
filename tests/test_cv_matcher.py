@@ -20,10 +20,11 @@ to_confirm:
     profile = load_profile(profile_path)
     offer = {
         "titre": "Developpeur front-end React",
-        "description": "Integration HTML avec JavaScript et React.",
-        "technologies": "HTML, JavaScript, React, TypeScript",
-        "score_reason": "Bon alignement frontend.",
+        "description": "Integration HTML avec JavaScript et React. Score grace verifier mission entreprise.",
+        "technologies": "HTML, JavaScript, React, TypeScript, technologies, CDI.",
+        "score_reason": "Bon alignement frontend pour une offre a Dijon.",
         "type_contrat": "CDI",
+        "localisation": "Dijon",
     }
 
     match = match_offer_to_profile(offer, profile)
@@ -34,4 +35,11 @@ to_confirm:
     assert "React" not in match.strong_present
     assert "React" not in match.medium_present
     assert "TypeScript" in match.offer_keywords_not_in_profile
-
+    assert "score" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "grace" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "verifier" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "technologies" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "cdi." not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "mission" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "entreprise" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]
+    assert "dijon" not in [keyword.casefold() for keyword in match.offer_keywords_not_in_profile]

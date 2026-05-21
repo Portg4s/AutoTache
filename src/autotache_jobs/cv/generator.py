@@ -110,11 +110,11 @@ def _render_recruiter_markdown(cv_data: TargetedCvData) -> str:
     sections = [
         f"# CV - {heading}",
         _candidate_header_markdown(cv_data),
-        "## Profil ciblé\n"
+        "## Profil\n"
         + "\n\n".join(
             [
-                "### Titre ciblé\n" + cv_data.proposed_title,
-                "### Accroche ciblée\n" + cv_data.recruiter_summary,
+                cv_data.proposed_title,
+                cv_data.recruiter_summary,
             ]
         ),
         "## Compétences clés\n" + _recruiter_skills_section(cv_data),
@@ -174,12 +174,8 @@ def _skills_section(cv_data: TargetedCvData) -> str:
 
 
 def _recruiter_skills_section(cv_data: TargetedCvData) -> str:
-    sections: list[str] = []
-    if cv_data.skills.confirmed:
-        sections.append("### Compétences confirmées pertinentes\n" + _bullet_section(cv_data.skills.confirmed, empty=""))
-    if cv_data.skills.complementary:
-        sections.append("### Compétences complémentaires\n" + _bullet_section(cv_data.skills.complementary, empty=""))
-    return "\n\n".join(sections)
+    skills = cv_data.skills.confirmed + cv_data.skills.complementary
+    return _bullet_section(skills, empty="").strip()
 
 
 def _experiences_section(experiences: list[CvExperience]) -> str:

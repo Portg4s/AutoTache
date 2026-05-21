@@ -117,10 +117,8 @@ def _add_recruiter_content(document: Document, cv_data: TargetedCvData) -> None:
     title = cv_data.identity.name or cv_data.proposed_title
     document.add_paragraph(f"CV - {title}", style="Title")
 
-    document.add_heading("Profil ciblé", level=1)
-    document.add_heading("Titre ciblé", level=2)
+    document.add_heading("Profil", level=1)
     document.add_paragraph(cv_data.proposed_title)
-    document.add_heading("Accroche ciblée", level=2)
     document.add_paragraph(cv_data.recruiter_summary)
 
     document.add_heading("Compétences clés", level=1)
@@ -172,6 +170,10 @@ def _add_candidate_header(document: Document, cv_data: TargetedCvData) -> None:
 
 
 def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confirm: bool) -> None:
+    if not include_to_confirm:
+        _add_bullets(document, cv_data.skills.confirmed + cv_data.skills.complementary)
+        return
+
     if cv_data.skills.confirmed or include_to_confirm:
         document.add_heading("Compétences confirmées pertinentes", level=2)
         _add_bullets(

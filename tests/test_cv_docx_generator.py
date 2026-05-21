@@ -73,8 +73,11 @@ def test_generates_recruiter_docx_without_internal_analysis(tmp_path: Path) -> N
     assert "À orienter vers l'offre avec" not in content
     assert "Aucune compétence complémentaire" not in content
     assert "Aucune compétence à confirmer" not in content
-    assert "Profil ciblé" in content
+    assert "Profil" in content
+    assert "Profil ciblé" not in content
     assert "Compétences clés" in content
+    assert "Compétences confirmées pertinentes" not in content
+    assert "Compétences complémentaires" not in content
     assert "Expériences" in content
     assert "Projets" in content
     assert "Formation" in content

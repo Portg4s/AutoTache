@@ -11,6 +11,37 @@ from autotache_jobs.cv.matcher import match_offer_to_profile
 from autotache_jobs.cv.profile import CvProfile
 
 
+HIGH_PRIORITY_SUMMARY_SKILLS = {
+    "wordpress",
+    "elementor",
+    "divi",
+    "woocommerce",
+    "webdesign",
+    "seo",
+    "figma",
+    "ui design",
+    "ux design",
+    "html",
+    "css",
+    "javascript",
+    "identite visuelle",
+    "graphisme",
+    "maquette",
+    "e-commerce",
+    "ecommerce",
+    "newsletter",
+    "reseaux sociaux",
+}
+LOW_PRIORITY_SUMMARY_SKILLS = {
+    "git",
+    "github",
+    "suite office",
+    "canva",
+    "suite adobe",
+}
+MAX_RECRUITER_SUMMARY_SKILLS = 4
+
+
 @dataclass(frozen=True)
 class CvOfferInfo:
     title: str
@@ -194,13 +225,13 @@ def _recruiter_summary(profile_summary: str, skills: CvSkills) -> str:
     if not profile_summary:
         return ""
 
-    confirmed = skills.confirmed + skills.complementary
-    if not confirmed:
+    summary_skills = _summary_skills(skills.confirmed + skills.complementary)
+    if not summary_skills:
         return profile_summary
 
     return (
         f"{profile_summary} J'accompagne des projets web avec une approche orientée utilisateur, "
-        f"en mettant en avant {_natural_skill_list(confirmed)}."
+        f"en mettant en avant {_natural_skill_list(summary_skills)}."
     )
 
 
@@ -341,6 +372,21 @@ def _natural_skill_list(items: list[str]) -> str:
     if len(items) == 2:
         return f"{items[0]} et {items[1]}"
     return f"{', '.join(items[:-1])} et {items[-1]}"
+
+
+def _summary_skills(skills: list[str]) -> list[str]:
+    high_priority = [skill for skill in skills if _summary_priority(skill) == 0]
+    candidates = high_priority if high_priority else skills
+    return candidates[:MAX_RECRUITER_SUMMARY_SKILLS]
+
+
+def _summary_priority(skill: str) -> int:
+    normalized = _normalize_for_choice(skill)
+    if normalized in HIGH_PRIORITY_SUMMARY_SKILLS:
+        return 0
+    if normalized in LOW_PRIORITY_SUMMARY_SKILLS:
+        return 2
+    return 1
 
 
 def _normalize_for_choice(value: str) -> str:

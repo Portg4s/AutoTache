@@ -5,4 +5,5 @@ PyYAML
 python-dateutil
 openpyxl
 python-docx
+docxtpl
 pytest

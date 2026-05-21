@@ -4,4 +4,5 @@ pydantic
 PyYAML
 python-dateutil
 openpyxl
+python-docx
 pytest

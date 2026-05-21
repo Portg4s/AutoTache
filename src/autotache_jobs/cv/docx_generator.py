@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from docx import Document
 from docx.shared import Cm, Pt
@@ -14,26 +14,40 @@ from autotache_jobs.cv.builder import CvExperience, CvProject, TargetedCvData, b
 from autotache_jobs.cv.profile import CvProfile
 
 
+CvRenderMode = Literal["draft", "recruiter"]
+
+
 def generate_cv_docx(
     *,
     offer: dict[str, Any],
     profile: CvProfile,
     output_dir: str | Path = "generated_cv",
+    mode: CvRenderMode = "draft",
 ) -> Path:
+    _validate_mode(mode)
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     cv_data = build_targeted_cv_data(offer, profile)
-    output_path = target_dir / _safe_filename(cv_data)
-    document = _build_document(cv_data)
+    output_path = target_dir / _safe_filename(cv_data, mode)
+    document = _build_document(cv_data, mode=mode)
     document.save(output_path)
     return output_path
 
 
-def _build_document(cv_data: TargetedCvData) -> Document:
+def _build_document(cv_data: TargetedCvData, *, mode: CvRenderMode) -> Document:
     document = Document()
     _set_base_style(document)
 
+    if mode == "recruiter":
+        _add_recruiter_content(document, cv_data)
+    else:
+        _add_draft_content(document, cv_data)
+
+    return document
+
+
+def _add_draft_content(document: Document, cv_data: TargetedCvData) -> None:
     offer = cv_data.offer_info
     _add_candidate_header(document, cv_data)
     document.add_paragraph(f"CV ciblé — {offer.company} — {offer.title}", style="Title")
@@ -48,13 +62,13 @@ def _build_document(cv_data: TargetedCvData) -> Document:
     document.add_paragraph(cv_data.targeted_summary)
 
     document.add_heading("Compétences clés", level=1)
-    _add_skills(document, cv_data)
+    _add_skills(document, cv_data, include_to_confirm=True)
 
     document.add_heading("Expériences", level=1)
     _add_experiences(document, cv_data.experiences)
 
     document.add_heading("Projets", level=1)
-    _add_projects(document, cv_data.projects)
+    _add_projects(document, cv_data.projects, include_source=True)
 
     document.add_heading("Formation", level=1)
     _add_bullets(document, cv_data.education, empty="Aucune formation structurée détectée dans le profil maître.")
@@ -97,7 +111,29 @@ def _build_document(cv_data: TargetedCvData) -> Document:
     document.add_heading("Règles de prudence", level=2)
     _add_bullets(document, cv_data.analysis.caution_rules)
 
-    return document
+
+def _add_recruiter_content(document: Document, cv_data: TargetedCvData) -> None:
+    _add_candidate_header(document, cv_data)
+    title = cv_data.identity.name or cv_data.proposed_title
+    document.add_paragraph(f"CV - {title}", style="Title")
+
+    document.add_heading("Profil ciblé", level=1)
+    document.add_heading("Titre ciblé", level=2)
+    document.add_paragraph(cv_data.proposed_title)
+    document.add_heading("Accroche ciblée", level=2)
+    document.add_paragraph(cv_data.targeted_summary)
+
+    document.add_heading("Compétences clés", level=1)
+    _add_skills(document, cv_data, include_to_confirm=False)
+
+    document.add_heading("Expériences", level=1)
+    _add_experiences(document, cv_data.experiences)
+
+    document.add_heading("Projets", level=1)
+    _add_projects(document, cv_data.projects, include_source=False)
+
+    document.add_heading("Formation", level=1)
+    _add_bullets(document, cv_data.education, empty="Aucune formation structurée détectée dans le profil maître.")
 
 
 def _set_base_style(document: Document) -> None:
@@ -135,7 +171,7 @@ def _add_candidate_header(document: Document, cv_data: TargetedCvData) -> None:
         document.add_paragraph(" | ".join(details))
 
 
-def _add_skills(document: Document, cv_data: TargetedCvData) -> None:
+def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confirm: bool) -> None:
     document.add_heading("Compétences confirmées pertinentes", level=2)
     _add_bullets(
         document,
@@ -148,6 +184,9 @@ def _add_skills(document: Document, cv_data: TargetedCvData) -> None:
         cv_data.skills.complementary,
         empty="Aucune compétence complémentaire du profil détectée explicitement dans l'offre.",
     )
+    if not include_to_confirm:
+        return
+
     document.add_heading("Compétences à confirmer", level=2)
     if cv_data.skills.to_confirm:
         _add_bullets(
@@ -171,14 +210,14 @@ def _add_experiences(document: Document, experiences: list[CvExperience]) -> Non
         _add_bullets(document, experience.bullets)
 
 
-def _add_projects(document: Document, projects: list[CvProject]) -> None:
+def _add_projects(document: Document, projects: list[CvProject], *, include_source: bool) -> None:
     if not projects:
         _add_bullets(document, [], empty="Aucun projet structuré détecté dans le profil maître.")
         return
 
     for project in projects:
         document.add_heading(project.name, level=2)
-        lines = [f"Source: {project.source}"]
+        lines = [f"Source: {project.source}"] if include_source else []
         if project.url:
             lines.append(f"URL: {project.url}")
         lines.extend(project.bullets)
@@ -197,10 +236,11 @@ def _add_bullets(document: Document, items: list[str], *, empty: str | None = No
         document.add_paragraph(item, style="List Bullet")
 
 
-def _safe_filename(cv_data: TargetedCvData) -> str:
+def _safe_filename(cv_data: TargetedCvData, mode: CvRenderMode) -> str:
     company = _slug(cv_data.offer_info.company)
     title = _slug(cv_data.offer_info.title)
-    return f"CV_Bastien_{company}_{title}.docx"
+    prefix = "CV_Bastien" if mode == "recruiter" else "CV_Draft_Bastien"
+    return f"{prefix}_{company}_{title}.docx"
 
 
 def _slug(value: Any) -> str:
@@ -213,3 +253,8 @@ def _slug(value: Any) -> str:
 
 def _inline_list(items: list[str]) -> str:
     return ", ".join(items) if items else "Aucune"
+
+
+def _validate_mode(mode: str) -> None:
+    if mode not in {"draft", "recruiter"}:
+        raise ValueError("--mode doit etre 'draft' ou 'recruiter'.")

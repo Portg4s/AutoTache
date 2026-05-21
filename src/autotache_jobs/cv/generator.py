@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from autotache_jobs.cv.builder import (
     CvExperience,
@@ -16,6 +16,8 @@ from autotache_jobs.cv.builder import (
 from autotache_jobs.cv.matcher import CvMatch
 from autotache_jobs.cv.profile import CvProfile
 
+
+CvRenderMode = Literal["draft", "recruiter"]
 
 SECTIONS = [
     "CV proposé",
@@ -28,13 +30,15 @@ def generate_cv_draft(
     offer: dict[str, Any],
     profile: CvProfile,
     output_dir: str | Path = "generated_cv",
+    mode: CvRenderMode = "draft",
 ) -> Path:
+    _validate_mode(mode)
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     cv_data = build_targeted_cv_data(offer, profile)
-    output_path = target_dir / _safe_filename(offer)
-    output_path.write_text(_render_markdown(cv_data), encoding="utf-8")
+    output_path = target_dir / _safe_filename(offer, mode)
+    output_path.write_text(_render_markdown(cv_data, mode=mode), encoding="utf-8")
     return output_path
 
 
@@ -48,7 +52,13 @@ def draft_summary(offer: dict[str, Any], match: CvMatch) -> str:
     )
 
 
-def _render_markdown(cv_data: TargetedCvData) -> str:
+def _render_markdown(cv_data: TargetedCvData, *, mode: CvRenderMode) -> str:
+    if mode == "recruiter":
+        return _render_recruiter_markdown(cv_data)
+    return _render_draft_markdown(cv_data)
+
+
+def _render_draft_markdown(cv_data: TargetedCvData) -> str:
     offer = cv_data.offer_info
 
     return "\n\n".join(
@@ -94,10 +104,39 @@ def _render_markdown(cv_data: TargetedCvData) -> str:
     ) + "\n"
 
 
-def _safe_filename(offer: dict[str, Any]) -> str:
+def _render_recruiter_markdown(cv_data: TargetedCvData) -> str:
+    identity = cv_data.identity
+    heading = identity.name or cv_data.proposed_title
+    sections = [
+        f"# CV - {heading}",
+        _candidate_header_markdown(cv_data),
+        "## Profil ciblé\n"
+        + "\n\n".join(
+            [
+                "### Titre ciblé\n" + cv_data.proposed_title,
+                "### Accroche ciblée\n" + cv_data.targeted_summary,
+            ]
+        ),
+        "## Compétences clés\n" + _recruiter_skills_section(cv_data),
+        "## Expériences\n" + _experiences_section(cv_data.experiences),
+        "## Projets\n" + _projects_section(cv_data.projects, include_source=False),
+        "## Formation\n" + _education_section(cv_data.education),
+    ]
+    return "\n\n".join(section for section in sections if section) + "\n"
+
+
+def _candidate_header_markdown(cv_data: TargetedCvData) -> str:
+    identity = cv_data.identity
+    details = [identity.title, identity.location, identity.email, identity.phone]
+    details = [detail for detail in details if detail]
+    return " | ".join(details)
+
+
+def _safe_filename(offer: dict[str, Any], mode: CvRenderMode) -> str:
     company = _slug(offer.get("entreprise") or "entreprise")
     title = _slug(offer.get("titre") or "offre")
-    return f"cv_draft_{company}_{title}.md"
+    prefix = "cv_recruiter" if mode == "recruiter" else "cv_draft"
+    return f"{prefix}_{company}_{title}.md"
 
 
 def _slug(value: Any) -> str:
@@ -134,6 +173,23 @@ def _skills_section(cv_data: TargetedCvData) -> str:
     )
 
 
+def _recruiter_skills_section(cv_data: TargetedCvData) -> str:
+    return "\n\n".join(
+        [
+            "### Compétences confirmées pertinentes\n"
+            + _bullet_section(
+                cv_data.skills.confirmed,
+                empty="Aucune compétence forte du profil détectée explicitement dans l'offre.",
+            ),
+            "### Compétences complémentaires\n"
+            + _bullet_section(
+                cv_data.skills.complementary,
+                empty="Aucune compétence complémentaire du profil détectée explicitement dans l'offre.",
+            ),
+        ]
+    )
+
+
 def _experiences_section(experiences: list[CvExperience]) -> str:
     blocks = [_format_experience(experience) for experience in experiences]
     if not blocks:
@@ -141,8 +197,8 @@ def _experiences_section(experiences: list[CvExperience]) -> str:
     return "\n\n".join(blocks)
 
 
-def _projects_section(projects: list[CvProject]) -> str:
-    blocks = [_format_project(project) for project in projects]
+def _projects_section(projects: list[CvProject], *, include_source: bool = True) -> str:
+    blocks = [_format_project(project, include_source=include_source) for project in projects]
     if not blocks:
         return "- Aucun projet structuré détecté dans le profil maître."
     return "\n\n".join(blocks)
@@ -175,8 +231,8 @@ def _format_experience(experience: CvExperience) -> str:
     return f"#### {experience.heading}" + (f"\n{body}" if body else "")
 
 
-def _format_project(project: CvProject) -> str:
-    lines = [f"- Source: {project.source}"]
+def _format_project(project: CvProject, *, include_source: bool = True) -> str:
+    lines = [f"- Source: {project.source}"] if include_source else []
     if project.url:
         lines.append(f"- URL: {project.url}")
     lines.extend(f"- {bullet}" for bullet in project.bullets)
@@ -193,3 +249,8 @@ def _bullet_section(items: list[str], *, empty: str) -> str:
 
 def _inline_list(items: list[str]) -> str:
     return ", ".join(items) if items else "Aucune"
+
+
+def _validate_mode(mode: str) -> None:
+    if mode not in {"draft", "recruiter"}:
+        raise ValueError("--mode doit etre 'draft' ou 'recruiter'.")

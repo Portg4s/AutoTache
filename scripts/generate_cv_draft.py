@@ -19,6 +19,7 @@ def main() -> int:
     parser.add_argument("--profile", default="profile/profil_maitre.yaml", help="Profil YAML a utiliser.")
     parser.add_argument("--row", type=int, help="Ligne Excel reelle a utiliser.")
     parser.add_argument("--top", type=int, help="Rang de la meilleure offre candidate a utiliser.")
+    parser.add_argument("--mode", choices=["draft", "recruiter"], default="draft", help="Type de rendu a generer.")
     args = parser.parse_args()
 
     if args.row is None and args.top is None:
@@ -33,7 +34,7 @@ def main() -> int:
         elif args.row is not None:
             offer = read_offer_from_xlsx(args.debug_xlsx, args.row)
 
-        output_path = generate_cv_draft(offer=offer, profile=profile)
+        output_path = generate_cv_draft(offer=offer, profile=profile, mode=args.mode)
         match = match_offer_to_profile(offer, profile)
     except ValueError as exc:
         print(f"Erreur: {exc}", file=sys.stderr)

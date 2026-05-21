@@ -9,13 +9,15 @@ from typing import Any, Literal
 
 from docx import Document
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from docx.shared import Cm, Pt
+from docx.shared import Cm, Pt, RGBColor
 
 from autotache_jobs.cv.builder import CvExperience, CvProject, TargetedCvData, build_targeted_cv_data
 from autotache_jobs.cv.profile import CvProfile
 
 
 CvRenderMode = Literal["draft", "recruiter"]
+ACCENT_COLOR = RGBColor(44, 82, 100)
+MUTED_COLOR = RGBColor(90, 90, 90)
 
 
 def generate_cv_docx(
@@ -119,8 +121,8 @@ def _add_recruiter_content(document: Document, cv_data: TargetedCvData) -> None:
     _add_recruiter_title(document, f"CV - {title}")
 
     _add_recruiter_section_heading(document, "Profil")
-    document.add_paragraph(cv_data.proposed_title)
-    document.add_paragraph(cv_data.recruiter_summary)
+    _add_profile_title(document, cv_data.proposed_title)
+    _add_profile_summary(document, cv_data.recruiter_summary)
 
     _add_recruiter_section_heading(document, "Compétences clés")
     _add_recruiter_skills(document, cv_data)
@@ -137,10 +139,10 @@ def _add_recruiter_content(document: Document, cv_data: TargetedCvData) -> None:
 
 def _set_base_style(document: Document) -> None:
     for section in document.sections:
-        section.top_margin = Cm(1.5)
-        section.bottom_margin = Cm(1.5)
-        section.left_margin = Cm(1.5)
-        section.right_margin = Cm(1.5)
+        section.top_margin = Cm(1.35)
+        section.bottom_margin = Cm(1.35)
+        section.left_margin = Cm(1.45)
+        section.right_margin = Cm(1.45)
 
     normal = document.styles["Normal"]
     normal.font.name = "Calibri"
@@ -188,15 +190,17 @@ def _add_recruiter_header(document: Document, cv_data: TargetedCvData) -> None:
         paragraph.paragraph_format.space_after = Pt(1)
         run = paragraph.add_run(identity.name)
         run.bold = True
-        run.font.size = Pt(14)
+        run.font.size = Pt(16)
+        run.font.color.rgb = ACCENT_COLOR
 
     details = [identity.title, identity.location, identity.email, identity.phone]
     details = [detail for detail in details if detail]
     if details:
         paragraph = document.add_paragraph()
-        paragraph.paragraph_format.space_after = Pt(4)
+        paragraph.paragraph_format.space_after = Pt(5)
         run = paragraph.add_run(" | ".join(details))
         run.font.size = Pt(10)
+        run.font.color.rgb = MUTED_COLOR
 
 
 def _add_recruiter_title(document: Document, text: str) -> None:
@@ -205,6 +209,7 @@ def _add_recruiter_title(document: Document, text: str) -> None:
     run = paragraph.add_run(text)
     run.bold = True
     run.font.size = Pt(16)
+    run.font.color.rgb = ACCENT_COLOR
     _add_separator(document)
 
 
@@ -212,17 +217,34 @@ def _add_separator(document: Document) -> None:
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(0)
     paragraph.paragraph_format.space_after = Pt(6)
-    run = paragraph.add_run("_" * 54)
-    run.font.size = Pt(6)
+    run = paragraph.add_run("─" * 58)
+    run.font.size = Pt(5)
+    run.font.color.rgb = RGBColor(190, 196, 200)
 
 
 def _add_recruiter_section_heading(document: Document, text: str) -> None:
     paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = Pt(7)
+    paragraph.paragraph_format.space_before = Pt(8)
+    paragraph.paragraph_format.space_after = Pt(3)
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.size = Pt(12.5)
+    run.font.color.rgb = ACCENT_COLOR
+
+
+def _add_profile_title(document: Document, text: str) -> None:
+    paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_after = Pt(2)
     run = paragraph.add_run(text)
     run.bold = True
-    run.font.size = Pt(12)
+    run.font.size = Pt(10.5)
+
+
+def _add_profile_summary(document: Document, text: str) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(5)
+    paragraph.paragraph_format.line_spacing = 1.08
+    paragraph.add_run(text)
 
 
 def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confirm: bool) -> None:
@@ -261,7 +283,14 @@ def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confi
 
 
 def _add_recruiter_skills(document: Document, cv_data: TargetedCvData) -> None:
-    _add_bullets(document, cv_data.skills.confirmed + cv_data.skills.complementary)
+    skills = cv_data.skills.confirmed + cv_data.skills.complementary
+    if not skills:
+        return
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(5)
+    run = paragraph.add_run(" • ".join(skills))
+    run.font.size = Pt(10.5)
 
 
 def _add_recruiter_experiences(document: Document, experiences: list[CvExperience]) -> None:
@@ -290,11 +319,12 @@ def _add_recruiter_projects(document: Document, projects: list[CvProject]) -> No
 
 def _add_item_heading(document: Document, text: str) -> None:
     paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = Pt(4)
+    paragraph.paragraph_format.space_before = Pt(5)
     paragraph.paragraph_format.space_after = Pt(1)
     run = paragraph.add_run(text)
     run.bold = True
     run.font.size = Pt(11)
+    run.font.color.rgb = RGBColor(35, 35, 35)
 
 
 def _add_experiences(document: Document, experiences: list[CvExperience]) -> None:
@@ -330,7 +360,8 @@ def _add_bullets(document: Document, items: list[str], *, empty: str | None = No
         return
 
     for item in items:
-        document.add_paragraph(item, style="List Bullet")
+        paragraph = document.add_paragraph(item, style="List Bullet")
+        paragraph.paragraph_format.space_after = Pt(1)
 
 
 def _safe_filename(cv_data: TargetedCvData, mode: CvRenderMode) -> str:

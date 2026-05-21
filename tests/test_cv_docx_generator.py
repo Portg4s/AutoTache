@@ -76,6 +76,7 @@ def test_generates_recruiter_docx_without_internal_analysis(tmp_path: Path) -> N
     assert "Profil" in content
     assert "Profil ciblé" not in content
     assert "Compétences clés" in content
+    assert "HTML • CSS • JavaScript" in content
     assert "Compétences confirmées pertinentes" not in content
     assert "Compétences complémentaires" not in content
     assert "Expériences" in content

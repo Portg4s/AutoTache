@@ -30,6 +30,7 @@ def test_generates_draft_docx_with_internal_analysis_by_default(tmp_path: Path) 
     assert "Bastien Test" in content
     assert "Developpeur web | Dijon | bastien@example.test | 0102030405" in content
     assert "CV ciblé" in content
+    assert "À orienter vers l'offre avec" in content
     assert "Profil ciblé" in content
     assert "Compétences clés" in content
     assert "Compétences à confirmer" in content
@@ -66,6 +67,12 @@ def test_generates_recruiter_docx_without_internal_analysis(tmp_path: Path) -> N
 
     content = _docx_text(output_path)
     assert "CV - Bastien Test" in content
+    assert "Resume court issu de profile_summary." in content
+    assert "approche orientée utilisateur" in content
+    assert "HTML, CSS et JavaScript" in content
+    assert "À orienter vers l'offre avec" not in content
+    assert "Aucune compétence complémentaire" not in content
+    assert "Aucune compétence à confirmer" not in content
     assert "Profil ciblé" in content
     assert "Compétences clés" in content
     assert "Expériences" in content

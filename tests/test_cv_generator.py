@@ -34,6 +34,7 @@ def test_generates_draft_markdown_without_modifying_sources_by_default(tmp_path:
     for section in SECTIONS:
         assert f"## {section}" in content
     assert "Resume court issu de profile_summary." in content
+    assert "À orienter vers l'offre avec" in content
     assert "#### Integrateur web - Studio Local (2021 -> 2024)" in content
     assert "Livraison de pages accessibles" in content
     assert "Refonte vitrine" in content
@@ -71,6 +72,12 @@ def test_generates_recruiter_markdown_without_internal_analysis(tmp_path: Path) 
     assert output_path.name == "cv_recruiter_agence_test_integrateur_front_react.md"
     assert "# CV - Bastien Test" in content
     assert "Developpeur web | Dijon | bastien@example.test | 0102030405" in content
+    assert "Resume court issu de profile_summary." in content
+    assert "approche orientée utilisateur" in content
+    assert "HTML, CSS et JavaScript" in content
+    assert "À orienter vers l'offre avec" not in content
+    assert "Aucune compétence complémentaire" not in content
+    assert "Aucune compétence à confirmer" not in content
     assert "## Profil ciblé" in content
     assert "## Compétences clés" in content
     assert "## Expériences" in content

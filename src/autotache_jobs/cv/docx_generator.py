@@ -121,7 +121,7 @@ def _add_recruiter_content(document: Document, cv_data: TargetedCvData) -> None:
     document.add_heading("Titre ciblé", level=2)
     document.add_paragraph(cv_data.proposed_title)
     document.add_heading("Accroche ciblée", level=2)
-    document.add_paragraph(cv_data.targeted_summary)
+    document.add_paragraph(cv_data.recruiter_summary)
 
     document.add_heading("Compétences clés", level=1)
     _add_skills(document, cv_data, include_to_confirm=False)
@@ -172,18 +172,20 @@ def _add_candidate_header(document: Document, cv_data: TargetedCvData) -> None:
 
 
 def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confirm: bool) -> None:
-    document.add_heading("Compétences confirmées pertinentes", level=2)
-    _add_bullets(
-        document,
-        cv_data.skills.confirmed,
-        empty="Aucune compétence forte du profil détectée explicitement dans l'offre.",
-    )
-    document.add_heading("Compétences complémentaires", level=2)
-    _add_bullets(
-        document,
-        cv_data.skills.complementary,
-        empty="Aucune compétence complémentaire du profil détectée explicitement dans l'offre.",
-    )
+    if cv_data.skills.confirmed or include_to_confirm:
+        document.add_heading("Compétences confirmées pertinentes", level=2)
+        _add_bullets(
+            document,
+            cv_data.skills.confirmed,
+            empty="Aucune compétence forte du profil détectée explicitement dans l'offre.",
+        )
+    if cv_data.skills.complementary or include_to_confirm:
+        document.add_heading("Compétences complémentaires", level=2)
+        _add_bullets(
+            document,
+            cv_data.skills.complementary,
+            empty="Aucune compétence complémentaire du profil détectée explicitement dans l'offre.",
+        )
     if not include_to_confirm:
         return
 

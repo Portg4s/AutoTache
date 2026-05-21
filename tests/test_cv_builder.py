@@ -64,6 +64,12 @@ portfolio:
 
     assert cv_data.proposed_title
     assert "Resume court issu de profile_summary." in cv_data.targeted_summary
+    assert "À orienter vers l'offre avec" in cv_data.targeted_summary
+    assert "Resume court issu de profile_summary." in cv_data.recruiter_summary
+    assert "approche orientée utilisateur" in cv_data.recruiter_summary
+    assert "HTML, CSS et JavaScript" in cv_data.recruiter_summary
+    assert "React" not in cv_data.recruiter_summary
+    assert "À orienter vers l'offre avec" not in cv_data.recruiter_summary
     assert cv_data.skills.confirmed == ["HTML", "CSS"]
     assert cv_data.skills.complementary == ["JavaScript"]
     assert cv_data.skills.to_confirm == ["React"]

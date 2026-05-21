@@ -67,6 +67,7 @@ class TargetedCvData:
     offer_info: CvOfferInfo
     proposed_title: str
     targeted_summary: str
+    recruiter_summary: str
     skills: CvSkills
     experiences: list[CvExperience]
     projects: list[CvProject]
@@ -88,6 +89,7 @@ def build_targeted_cv_data(offer: dict[str, Any], profile: CvProfile) -> Targete
         offer_info=_offer_info(offer),
         proposed_title=_proposed_title(offer, skills),
         targeted_summary=_targeted_summary(profile_summary, skills),
+        recruiter_summary=_recruiter_summary(profile_summary, skills),
         skills=skills,
         experiences=_experiences(profile.raw),
         projects=_projects(profile.raw),
@@ -186,6 +188,20 @@ def _targeted_summary(profile_summary: str, skills: CvSkills) -> str:
     if confirmed:
         return f"{profile_summary} À orienter vers l'offre avec: {_inline_list(confirmed)}."
     return profile_summary
+
+
+def _recruiter_summary(profile_summary: str, skills: CvSkills) -> str:
+    if not profile_summary:
+        return ""
+
+    confirmed = skills.confirmed + skills.complementary
+    if not confirmed:
+        return profile_summary
+
+    return (
+        f"{profile_summary} J'accompagne des projets web avec une approche orientée utilisateur, "
+        f"en mettant en avant {_natural_skill_list(confirmed)}."
+    )
 
 
 def _experiences(raw: dict[str, Any]) -> list[CvExperience]:
@@ -317,6 +333,14 @@ def _clean_lines(values: list[Any]) -> list[str]:
 
 def _inline_list(items: list[str]) -> str:
     return ", ".join(items) if items else "Aucune"
+
+
+def _natural_skill_list(items: list[str]) -> str:
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} et {items[1]}"
+    return f"{', '.join(items[:-1])} et {items[-1]}"
 
 
 def _normalize_for_choice(value: str) -> str:

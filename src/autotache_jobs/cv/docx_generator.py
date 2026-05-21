@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from docx import Document
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Cm, Pt
 
 from autotache_jobs.cv.builder import CvExperience, CvProject, TargetedCvData, build_targeted_cv_data
@@ -113,24 +114,24 @@ def _add_draft_content(document: Document, cv_data: TargetedCvData) -> None:
 
 
 def _add_recruiter_content(document: Document, cv_data: TargetedCvData) -> None:
-    _add_candidate_header(document, cv_data)
+    _add_recruiter_header(document, cv_data)
     title = cv_data.identity.name or cv_data.proposed_title
-    document.add_paragraph(f"CV - {title}", style="Title")
+    _add_recruiter_title(document, f"CV - {title}")
 
-    document.add_heading("Profil", level=1)
+    _add_recruiter_section_heading(document, "Profil")
     document.add_paragraph(cv_data.proposed_title)
     document.add_paragraph(cv_data.recruiter_summary)
 
-    document.add_heading("Compétences clés", level=1)
-    _add_skills(document, cv_data, include_to_confirm=False)
+    _add_recruiter_section_heading(document, "Compétences clés")
+    _add_recruiter_skills(document, cv_data)
 
-    document.add_heading("Expériences", level=1)
-    _add_experiences(document, cv_data.experiences)
+    _add_recruiter_section_heading(document, "Expériences")
+    _add_recruiter_experiences(document, cv_data.experiences)
 
-    document.add_heading("Projets", level=1)
-    _add_projects(document, cv_data.projects, include_source=False)
+    _add_recruiter_section_heading(document, "Projets")
+    _add_recruiter_projects(document, cv_data.projects)
 
-    document.add_heading("Formation", level=1)
+    _add_recruiter_section_heading(document, "Formation")
     _add_bullets(document, cv_data.education, empty="Aucune formation structurée détectée dans le profil maître.")
 
 
@@ -144,15 +145,26 @@ def _set_base_style(document: Document) -> None:
     normal = document.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(10.5)
+    normal.paragraph_format.space_after = Pt(4)
+    normal.paragraph_format.line_spacing = 1.05
 
     title = document.styles["Title"]
     title.font.name = "Calibri"
-    title.font.size = Pt(18)
+    title.font.size = Pt(16)
+    title.paragraph_format.space_before = Pt(2)
+    title.paragraph_format.space_after = Pt(6)
 
     for style_name, size in [("Heading 1", 14), ("Heading 2", 12), ("Heading 3", 11)]:
         style = document.styles[style_name]
         style.font.name = "Calibri"
         style.font.size = Pt(size)
+        style.paragraph_format.space_before = Pt(8)
+        style.paragraph_format.space_after = Pt(3)
+
+    bullet = document.styles["List Bullet"]
+    bullet.font.name = "Calibri"
+    bullet.font.size = Pt(10.5)
+    bullet.paragraph_format.space_after = Pt(1)
 
 
 def _add_candidate_header(document: Document, cv_data: TargetedCvData) -> None:
@@ -167,6 +179,50 @@ def _add_candidate_header(document: Document, cv_data: TargetedCvData) -> None:
     details = [detail for detail in details if detail]
     if details:
         document.add_paragraph(" | ".join(details))
+
+
+def _add_recruiter_header(document: Document, cv_data: TargetedCvData) -> None:
+    identity = cv_data.identity
+    if identity.name:
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(1)
+        run = paragraph.add_run(identity.name)
+        run.bold = True
+        run.font.size = Pt(14)
+
+    details = [identity.title, identity.location, identity.email, identity.phone]
+    details = [detail for detail in details if detail]
+    if details:
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(4)
+        run = paragraph.add_run(" | ".join(details))
+        run.font.size = Pt(10)
+
+
+def _add_recruiter_title(document: Document, text: str) -> None:
+    paragraph = document.add_paragraph(style="Title")
+    paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.size = Pt(16)
+    _add_separator(document)
+
+
+def _add_separator(document: Document) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(6)
+    run = paragraph.add_run("_" * 54)
+    run.font.size = Pt(6)
+
+
+def _add_recruiter_section_heading(document: Document, text: str) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(7)
+    paragraph.paragraph_format.space_after = Pt(2)
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.size = Pt(12)
 
 
 def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confirm: bool) -> None:
@@ -202,6 +258,43 @@ def _add_skills(document: Document, cv_data: TargetedCvData, *, include_to_confi
         )
     else:
         _add_bullets(document, [], empty="Aucune compétence à confirmer détectée dans l'offre.")
+
+
+def _add_recruiter_skills(document: Document, cv_data: TargetedCvData) -> None:
+    _add_bullets(document, cv_data.skills.confirmed + cv_data.skills.complementary)
+
+
+def _add_recruiter_experiences(document: Document, experiences: list[CvExperience]) -> None:
+    if not experiences:
+        return
+
+    for experience in experiences:
+        _add_item_heading(document, experience.heading)
+        _add_bullets(document, experience.bullets)
+
+
+def _add_recruiter_projects(document: Document, projects: list[CvProject]) -> None:
+    if not projects:
+        return
+
+    for project in projects:
+        _add_item_heading(document, project.name)
+        lines: list[str] = []
+        if project.url:
+            lines.append(f"URL: {project.url}")
+        lines.extend(project.bullets)
+        if project.technologies:
+            lines.append("Technologies: " + _inline_list(project.technologies))
+        _add_bullets(document, lines)
+
+
+def _add_item_heading(document: Document, text: str) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(4)
+    paragraph.paragraph_format.space_after = Pt(1)
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.size = Pt(11)
 
 
 def _add_experiences(document: Document, experiences: list[CvExperience]) -> None:

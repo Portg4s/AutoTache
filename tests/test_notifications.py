@@ -122,7 +122,7 @@ def test_discord_summary_mentions_generated_recruiter_cvs() -> None:
         }
     )
 
-    assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 2 (disponibles sur OneDrive)" in str(payload)
+    assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 2 PDF + DOCX disponibles sur OneDrive" in str(payload)
 
 
 def test_discord_summary_omits_generated_recruiter_cvs_when_count_is_zero_or_missing() -> None:
@@ -327,7 +327,7 @@ def test_discord_summary_falls_back_to_json_when_attachment_send_times_out(tmp_p
     assert result["status"] == "sent_without_attachment"
     assert "ReadTimeout" in result["error"]
     assert "https://discord.test/webhook" not in result["error"]
-    assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 3 (disponibles sur OneDrive)" in str(calls[1]["json"])
+    assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 3 PDF + DOCX disponibles sur OneDrive" in str(calls[1]["json"])
     assert "files" not in calls[1]
 
 

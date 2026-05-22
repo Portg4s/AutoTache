@@ -61,6 +61,7 @@ class CvIdentity:
     location: str
     email: str
     phone: str
+    permis: str
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,7 @@ def _identity_info(raw: dict[str, Any]) -> CvIdentity:
         location=_clean_text(identity.get("location")),
         email=_clean_text(identity.get("email")),
         phone=_clean_text(identity.get("phone")),
+        permis=_clean_text(identity.get("permis") or identity.get("driving_license") or identity.get("license")),
     )
 
 
@@ -193,22 +195,26 @@ def _proposed_title(offer: dict[str, Any], skills: CvSkills) -> str:
         for field in ["titre", "description", "technologies"]
     )
     text = _normalize_for_choice(f"{confirmed} {offer_context}")
-    confirmed_text = _normalize_for_choice(confirmed)
 
     has_front = any(skill in text for skill in ["html", "css", "javascript", "front"])
-    has_wordpress = "wordpress" in confirmed_text
-    has_design = any(skill in text for skill in ["webdesign", "figma", "ux", "ui"])
+    has_wordpress = "wordpress" in text
+    has_integration = any(skill in text for skill in ["integrateur", "integration", "html", "css", "wordpress"])
+    has_design = any(skill in text for skill in ["webdesign", "webdesigner", "figma", "ux", "ui", "maquette"])
     has_content = any(skill in text for skill in ["seo", "contenu", "cms", "e-commerce", "ecommerce"])
 
+    if has_wordpress and has_design and has_integration:
+        return "Webdesigner / Intégrateur web — WordPress & UI Design"
     if has_wordpress and has_front:
-        return "Développeur front-end / Intégrateur WordPress"
+        return "Intégrateur web / Développeur front-end — WordPress"
+    if has_design and any(skill in text for skill in ["ux", "ui", "webdesign", "webdesigner", "figma"]):
+        return "UI/UX Designer / Webdesigner"
     if has_front and has_design:
-        return "Développeur web / Intégrateur web / Webdesigner"
+        return "Développeur front-end / Intégrateur web"
     if has_design or has_content:
-        return "Profil digital web / UX / contenu"
+        return "Webdesigner / Profil web digital"
     if has_front:
-        return "Développeur web / Intégrateur web"
-    return "Profil web / digital"
+        return "Développeur front-end / Intégrateur web"
+    return "Profil web digital"
 
 
 def _targeted_summary(profile_summary: str, skills: CvSkills) -> str:

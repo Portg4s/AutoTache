@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>CV - {{ cv.identity.name or cv.proposed_title }}</title>
+  <style>{{ css | safe }}</style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div class="identity-block">
+        {% if cv.identity.name %}
+        <h1>{{ cv.identity.name }}</h1>
+        {% endif %}
+        <p class="headline">{{ cv.proposed_title }}</p>
+      </div>
+      {% set contact_items = [cv.identity.location, cv.identity.email, cv.identity.phone, cv.identity.permis] | select | list %}
+      {% if contact_items %}
+      <ul class="contact" aria-label="Coordonnées">
+        {% for item in contact_items %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </header>
+
+    <div class="layout">
+      <section class="main-column">
+        {% if cv.recruiter_summary %}
+        <section class="section profile">
+          <h2>Profil</h2>
+          <p>{{ cv.recruiter_summary }}</p>
+        </section>
+        {% endif %}
+
+        {% if cv.experiences %}
+        <section class="section">
+          <h2>Expériences</h2>
+          {% for experience in cv.experiences %}
+          <article class="item">
+            <h3>{{ experience.heading }}</h3>
+            {% if experience.bullets %}
+            <ul>
+              {% for bullet in experience.bullets[:4] %}
+              <li>{{ bullet }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if cv.projects %}
+        <section class="section">
+          <h2>Projets sélectionnés</h2>
+          {% for project in cv.projects[:4] %}
+          <article class="item">
+            <h3>{{ project.name }}</h3>
+            {% if project.bullets %}
+            <ul>
+              {% for bullet in project.bullets[:3] %}
+              <li>{{ bullet }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+            {% if project.technologies %}
+            <p class="techs">{{ project.technologies[:6] | join(" · ") }}</p>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </section>
+        {% endif %}
+      </section>
+
+      <aside class="side-column">
+        {% if skills %}
+        <section class="section">
+          <h2>Compétences clés</h2>
+          <ul class="skills">
+            {% for skill in skills %}
+            <li>{{ skill }}</li>
+            {% endfor %}
+          </ul>
+        </section>
+        {% endif %}
+
+        {% if cv.education %}
+        <section class="section">
+          <h2>Formation</h2>
+          {% for item in cv.education %}
+          <p class="education">{{ item }}</p>
+          {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if project_links %}
+        <section class="section">
+          <h2>Liens</h2>
+          <ul class="links">
+            {% for name, url in project_links %}
+            <li><span>{{ name }}</span><small>{{ url }}</small></li>
+            {% endfor %}
+          </ul>
+        </section>
+        {% endif %}
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

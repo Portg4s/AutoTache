@@ -200,7 +200,7 @@ def _export_lines(summary: dict[str, Any]) -> list[str]:
     ]
     total_generated_cvs = int(summary.get("total_generated_cvs", 0) or 0)
     if total_generated_cvs > 0:
-        lines.append(f"\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: {total_generated_cvs} (disponibles sur OneDrive)")
+        lines.append(f"\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: {total_generated_cvs} PDF + DOCX disponibles sur OneDrive")
     lines.append("Fichiers disponibles dans le dossier exports/")
     return lines
 

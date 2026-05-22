@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from autotache_jobs.cv.docx_generator import generate_cv_docx
+from autotache_jobs.cv.pdf_generator import generate_cv_pdf
 from autotache_jobs.cv.profile import load_profile
 
 from .exporter import export_offers_to_csv, export_offers_to_tracking_xlsx, export_offers_to_xlsx
@@ -75,7 +76,7 @@ def run_job_search(
     export_path = export_offers_to_csv(new_offers, main_export_dir)
     xlsx_export_path = export_offers_to_xlsx(new_offers, main_export_dir) if export_path else None
     tracking_xlsx_export_path = export_offers_to_tracking_xlsx(new_offers, main_export_dir)
-    generated_cvs = _generate_cv_documents_if_needed(config, new_offers, export_dir)
+    generated_cvs, generated_pdfs = _generate_cv_documents_if_needed(config, new_offers, export_dir)
     debug_export_path = _export_debug_offers(unique_normalized_offers, debug_export_dir) if include_debug_offers else None
     debug_xlsx_export_path = (
         _export_debug_offers_to_xlsx(unique_normalized_offers, debug_export_dir)
@@ -98,6 +99,7 @@ def run_job_search(
         "tracking_xlsx_export_path": str(tracking_xlsx_export_path) if tracking_xlsx_export_path else None,
         "generated_cvs": [str(path) for path in generated_cvs],
         "candidate_pack_paths": [str(path.parent) for path in generated_cvs],
+        "generated_pdfs": [str(path) for path in generated_pdfs],
         "total_generated_cvs": len(generated_cvs),
         "debug_export_path": str(debug_export_path) if debug_export_path else None,
         "debug_xlsx_export_path": str(debug_xlsx_export_path) if debug_xlsx_export_path else None,
@@ -259,14 +261,15 @@ def _is_exportable_decision(offer: dict) -> bool:
     return offer.get("decision") in {DECISION_RELEVANT, DECISION_REVIEW}
 
 
-def _generate_cv_documents_if_needed(config: Any, new_offers: list[dict], export_dir: str | Path) -> list[Path]:
+def _generate_cv_documents_if_needed(config: Any, new_offers: list[dict], export_dir: str | Path) -> tuple[list[Path], list[Path]]:
     cv_config = getattr(config, "cv_generation", None)
     if not new_offers or cv_config is None or not cv_config.enabled:
-        return []
+        return [], []
 
     profile = load_profile(cv_config.profile_path)
     output_root = _resolve_cv_output_root(cv_config.output_dir, export_dir)
-    generated_paths: list[Path] = []
+    generated_docx_paths: list[Path] = []
+    generated_pdf_paths: list[Path] = []
 
     for offer in new_offers:
         target_dir = output_root / _candidate_folder_name(offer)
@@ -276,10 +279,16 @@ def _generate_cv_documents_if_needed(config: Any, new_offers: list[dict], export
             output_dir=target_dir,
             mode="recruiter",
         )
-        _write_candidate_metadata(offer, target_dir, docx_path)
-        generated_paths.append(docx_path)
+        pdf_path = generate_cv_pdf(
+            offer=offer,
+            profile=profile,
+            output_dir=target_dir,
+        )
+        _write_candidate_metadata(offer, target_dir, docx_path, pdf_path)
+        generated_docx_paths.append(docx_path)
+        generated_pdf_paths.append(pdf_path)
 
-    return generated_paths
+    return generated_docx_paths, generated_pdf_paths
 
 
 def _resolve_cv_output_root(configured_output_dir: str | Path, export_dir: str | Path) -> Path:
@@ -303,7 +312,7 @@ def _candidate_folder_name(offer: dict[str, Any]) -> str:
     )
 
 
-def _write_candidate_metadata(offer: dict[str, Any], target_dir: Path, docx_path: Path) -> None:
+def _write_candidate_metadata(offer: dict[str, Any], target_dir: Path, docx_path: Path, pdf_path: Path) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     metadata = {
         "offer_id": _metadata_value(offer.get("id_offre")),
@@ -316,6 +325,7 @@ def _write_candidate_metadata(offer: dict[str, Any], target_dir: Path, docx_path
         "score_total": offer.get("score_total"),
         "offer_url": _metadata_value(offer.get("url_offre")),
         "generated_docx": docx_path.name,
+        "generated_pdf": pdf_path.name,
     }
     metadata_path = target_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

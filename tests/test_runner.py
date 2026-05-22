@@ -1325,7 +1325,7 @@ def test_runner_main_export_includes_review_and_relevant_decisions(tmp_path: Pat
     assert json.loads(Path(summary["seen_ids_path"]).read_text(encoding="utf-8")) == ["PERTINENT", "REVIEW"]
 
 
-def test_runner_generates_recruiter_docx_for_each_new_exportable_offer(tmp_path: Path, monkeypatch) -> None:
+def test_runner_generates_recruiter_docx_and_pdf_for_each_new_exportable_offer(tmp_path: Path, monkeypatch) -> None:
     first_offer = _wordpress_offer("ID 1/é")
     first_offer["entreprise"] = {"nom": "Agence Test"}
     first_offer["intitule"] = "Integrateur front React"
@@ -1334,18 +1334,27 @@ def test_runner_generates_recruiter_docx_for_each_new_exportable_offer(tmp_path:
     second_offer["intitule"] = "Integrateur front React"
     client = FakeFranceTravailClient([[first_offer, second_offer]])
     loaded_profiles = []
-    generated_calls = []
+    generated_docx_calls = []
+    generated_pdf_calls = []
 
     def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
-        generated_calls.append((offer, profile, Path(output_dir), mode))
+        generated_docx_calls.append((offer, profile, Path(output_dir), mode))
         output_path = Path(output_dir) / f"CV_{runner_module._slug(offer['id_offre'])}.docx"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text("fake docx", encoding="utf-8")
         return output_path
 
+    def fake_generate_cv_pdf(*, offer, profile, output_dir):
+        generated_pdf_calls.append((offer, profile, Path(output_dir)))
+        output_path = Path(output_dir) / f"CV_{runner_module._slug(offer['id_offre'])}.pdf"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"fake pdf")
+        return output_path
+
     monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"ID 1/é": DECISION_RELEVANT, "ID 2": DECISION_REVIEW}))
     monkeypatch.setattr(runner_module, "load_profile", lambda path: loaded_profiles.append(path) or object())
     monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
 
     summary = run_job_search(
         _config(
@@ -1366,16 +1375,20 @@ def test_runner_generates_recruiter_docx_for_each_new_exportable_offer(tmp_path:
     assert summary["total_new"] == 2
     assert summary["total_generated_cvs"] == 2
     assert [Path(path).name for path in summary["generated_cvs"]] == ["CV_id_1_e.docx", "CV_id_2.docx"]
+    assert [Path(path).name for path in summary["generated_pdfs"]] == ["CV_id_1_e.pdf", "CV_id_2.pdf"]
     assert [Path(path).name for path in summary["candidate_pack_paths"]] == [
         "id_1_e_agence_test_integrateur_front_react",
         "id_2_agence_test_integrateur_front_react",
     ]
-    assert len(generated_calls) == 2
-    assert [call[3] for call in generated_calls] == ["recruiter", "recruiter"]
-    assert generated_calls[0][2].name == "id_1_e_agence_test_integrateur_front_react"
-    assert generated_calls[1][2].name == "id_2_agence_test_integrateur_front_react"
+    assert len(generated_docx_calls) == 2
+    assert len(generated_pdf_calls) == 2
+    assert [call[3] for call in generated_docx_calls] == ["recruiter", "recruiter"]
+    assert generated_docx_calls[0][2].name == "id_1_e_agence_test_integrateur_front_react"
+    assert generated_docx_calls[1][2].name == "id_2_agence_test_integrateur_front_react"
+    assert generated_pdf_calls[0][2] == generated_docx_calls[0][2]
+    assert generated_pdf_calls[1][2] == generated_docx_calls[1][2]
 
-    metadata_path = generated_calls[0][2] / "metadata.json"
+    metadata_path = generated_docx_calls[0][2] / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata == {
         "offer_id": "ID 1/é",
@@ -1388,6 +1401,7 @@ def test_runner_generates_recruiter_docx_for_each_new_exportable_offer(tmp_path:
         "score_total": 90,
         "offer_url": "https://candidat.francetravail.fr/offres/recherche/detail/ID 1/é",
         "generated_docx": "CV_id_1_e.docx",
+        "generated_pdf": "CV_id_1_e.pdf",
     }
     assert str(tmp_path / "profile.yaml") not in metadata_path.read_text(encoding="utf-8")
 
@@ -1409,6 +1423,7 @@ def test_runner_does_not_load_profile_when_cv_generation_is_disabled(tmp_path: P
     assert summary["total_new"] == 1
     assert summary["total_generated_cvs"] == 0
     assert summary["generated_cvs"] == []
+    assert summary["generated_pdfs"] == []
     assert summary["candidate_pack_paths"] == []
     assert calls == []
 
@@ -1434,6 +1449,7 @@ def test_runner_does_not_generate_cv_for_seen_or_rejected_offers(tmp_path: Path,
     assert summary["total_new"] == 0
     assert summary["total_generated_cvs"] == 0
     assert summary["generated_cvs"] == []
+    assert summary["generated_pdfs"] == []
     assert summary["candidate_pack_paths"] == []
     assert calls == []
 
@@ -1448,6 +1464,34 @@ def test_runner_does_not_save_seen_ids_when_cv_generation_fails(tmp_path: Path, 
     monkeypatch.setattr(runner_module, "generate_cv_docx", fail_generate_cv_docx)
 
     with pytest.raises(RuntimeError, match="generation failed"):
+        run_job_search(
+            _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
+            _env(),
+            client=client,
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+
+    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
+
+
+def test_runner_does_not_save_seen_ids_when_pdf_generation_fails(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+
+    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
+        output_path = Path(output_dir) / "CV.docx"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("fake docx", encoding="utf-8")
+        return output_path
+
+    def fail_generate_cv_pdf(**kwargs):
+        raise RuntimeError("pdf generation failed")
+
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
+    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", fail_generate_cv_pdf)
+
+    with pytest.raises(RuntimeError, match="pdf generation failed"):
         run_job_search(
             _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
             _env(),

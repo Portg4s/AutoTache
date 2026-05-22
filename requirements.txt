@@ -4,6 +4,8 @@ pydantic
 PyYAML
 python-dateutil
 openpyxl
+Jinja2
+playwright
 python-docx
 docxtpl
 pytest

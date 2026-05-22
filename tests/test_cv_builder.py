@@ -4,6 +4,59 @@ from autotache_jobs.cv.builder import build_targeted_cv_data
 from autotache_jobs.cv.profile import load_profile
 
 
+def test_proposed_title_prefers_precise_wordpress_design_profile(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.yaml"
+    profile_path.write_text(
+        """
+competences_fortes:
+  - WordPress
+  - Figma
+  - HTML
+competences_moyennes:
+  - CSS
+""",
+        encoding="utf-8",
+    )
+    profile = load_profile(profile_path)
+
+    cv_data = build_targeted_cv_data(
+        {
+            "titre": "Webdesigner WordPress UI",
+            "description": "Creation de maquettes et integration WordPress.",
+            "technologies": "WordPress, Figma, HTML, CSS",
+        },
+        profile,
+    )
+
+    assert cv_data.proposed_title == "Webdesigner / Intégrateur web — WordPress & UI Design"
+
+
+def test_proposed_title_avoids_generic_digital_profile_for_ui_ux(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.yaml"
+    profile_path.write_text(
+        """
+competences_fortes:
+  - Figma
+  - UI Design
+competences_moyennes:
+  - UX Design
+""",
+        encoding="utf-8",
+    )
+    profile = load_profile(profile_path)
+
+    cv_data = build_targeted_cv_data(
+        {
+            "titre": "UI UX Designer",
+            "description": "Design interface, parcours utilisateur et maquettes Figma.",
+            "technologies": "Figma, UI, UX",
+        },
+        profile,
+    )
+
+    assert cv_data.proposed_title == "UI/UX Designer / Webdesigner"
+
+
 def test_build_targeted_cv_data_exposes_reusable_cv_sections(tmp_path: Path) -> None:
     profile_path = tmp_path / "profile.yaml"
     profile_path.write_text(

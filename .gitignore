@@ -37,3 +37,6 @@ profile/*.yml
 profile/*.docx
 profile/*.pdf
 generated_cv/
+
+# Local Supabase credentials / private notes
+sup.txt

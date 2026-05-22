@@ -148,7 +148,7 @@ jobs:
             france_travail:
               enabled: true
             adzuna:
-              enabled: true
+              enabled: false
               country: fr
               max_pages: 1
               results_per_page: 20
@@ -156,7 +156,7 @@ jobs:
                 - informatique
               location: Dijon
             jooble:
-              enabled: true
+              enabled: false
               base_url: "https://fr.jooble.org/api"
               max_pages: 1
               keywords:

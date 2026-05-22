@@ -28,6 +28,10 @@ pytest_run_autotache_sources/
 .pytest_tmp/
 
 # Personal profile / CV generation
+exports/candidatures/
+exports/candidatures_test_*/
+exports/**/candidatures/
+exports/**/candidatures_test_*/
 profile/*.yaml
 profile/*.yml
 profile/*.docx

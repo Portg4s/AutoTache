@@ -1,0 +1,1 @@
+"""Optional Supabase synchronization support."""

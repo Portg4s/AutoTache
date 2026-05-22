@@ -53,6 +53,11 @@ jobs:
           JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
           JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_OWNER_ID: ${{ secrets.SUPABASE_OWNER_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           python - <<'PY'
           import os
@@ -66,6 +71,11 @@ jobs:
               "JOOBLE_API_KEY": os.environ["JOOBLE_API_KEY"],
               "JSEARCH_API_KEY": os.environ["JSEARCH_API_KEY"],
               "DISCORD_WEBHOOK_URL": os.environ["DISCORD_WEBHOOK_URL"],
+              "SUPABASE_URL": os.environ["SUPABASE_URL"],
+              "SUPABASE_SECRET_KEY": os.environ["SUPABASE_SECRET_KEY"],
+              "SUPABASE_OWNER_ID": os.environ["SUPABASE_OWNER_ID"],
+              "GITHUB_RUN_ID": os.environ["GITHUB_RUN_ID"],
+              "GITHUB_EVENT_NAME": os.environ["GITHUB_EVENT_NAME"],
               "FRANCE_TRAVAIL_SCOPE": "api_offresdemploiv2 o2dsoffre",
               "FRANCE_TRAVAIL_TOKEN_URL": "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
               "FRANCE_TRAVAIL_API_BASE_URL": "https://api.francetravail.io/partenaire/offresdemploi/v2",
@@ -197,6 +207,11 @@ jobs:
             profile_path: profile/profil_maitre.yaml
             output_dir: exports/candidatures
             mode: recruiter
+
+          supabase:
+            enabled: true
+            bucket_name: candidate-documents
+            fail_run_on_error: false
 
           filters:
             exclude_terms:

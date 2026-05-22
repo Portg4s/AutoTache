@@ -125,6 +125,42 @@ def test_discord_summary_mentions_generated_recruiter_cvs() -> None:
     assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 2 PDF + DOCX disponibles sur OneDrive" in str(payload)
 
 
+def test_discord_summary_mentions_successful_supabase_sync() -> None:
+    payload = _send_and_capture(
+        {
+            "total_raw": 2,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 1},
+            "supabase_sync_enabled": True,
+            "supabase_sync_success": True,
+            "supabase_sync_error": "technical detail",
+        }
+    )
+    payload_text = str(payload)
+
+    assert "\u2601\ufe0f Application mobile : donn\u00e9es synchronis\u00e9es" in payload_text
+    assert "technical detail" not in payload_text
+
+
+def test_discord_summary_mentions_unavailable_supabase_sync_without_error_detail() -> None:
+    payload = _send_and_capture(
+        {
+            "total_raw": 2,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 1},
+            "supabase_sync_enabled": True,
+            "supabase_sync_success": False,
+            "supabase_sync_error": "secret-value from backend",
+        }
+    )
+    payload_text = str(payload)
+
+    assert "\u26a0\ufe0f Application mobile : synchronisation indisponible" in payload_text
+    assert "secret-value" not in payload_text
+
+
 def test_discord_summary_omits_generated_recruiter_cvs_when_count_is_zero_or_missing() -> None:
     payload_with_zero = _send_and_capture(
         {
@@ -245,6 +281,8 @@ def test_discord_summary_sends_tracking_xlsx_as_attachment_when_file_exists(tmp_
             "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
             "total_generated_cvs": 3,
             "tracking_xlsx_export_path": str(tracking_file),
+            "supabase_sync_enabled": True,
+            "supabase_sync_success": True,
         },
         http_post=fake_post,
     )
@@ -312,6 +350,8 @@ def test_discord_summary_falls_back_to_json_when_attachment_send_times_out(tmp_p
             "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
             "total_generated_cvs": 3,
             "tracking_xlsx_export_path": str(tracking_file),
+            "supabase_sync_enabled": True,
+            "supabase_sync_success": True,
         },
         http_post=fake_post,
     )
@@ -328,6 +368,7 @@ def test_discord_summary_falls_back_to_json_when_attachment_send_times_out(tmp_p
     assert "ReadTimeout" in result["error"]
     assert "https://discord.test/webhook" not in result["error"]
     assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 3 PDF + DOCX disponibles sur OneDrive" in str(calls[1]["json"])
+    assert "\u2601\ufe0f Application mobile : donn\u00e9es synchronis\u00e9es" in str(calls[1]["json"])
     assert "files" not in calls[1]
 
 

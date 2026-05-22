@@ -54,6 +54,22 @@ class CvGenerationConfig(BaseModel):
         return value
 
 
+class SupabaseSyncConfig(BaseModel):
+    """Optional Supabase synchronization settings."""
+
+    enabled: bool = False
+    bucket_name: str = "candidate-documents"
+    fail_run_on_error: bool = False
+
+    @field_validator("bucket_name")
+    @classmethod
+    def clean_bucket_name(cls, value: str) -> str:
+        cleaned = value.strip() if value else ""
+        if not cleaned:
+            raise ValueError("bucket_name ne doit pas etre vide")
+        return cleaned
+
+
 class SourceToggleConfig(BaseModel):
     """Enable or disable one offer source."""
 
@@ -201,6 +217,7 @@ class AppConfig(BaseModel):
     api: ApiConfig = Field(default_factory=ApiConfig)
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     cv_generation: CvGenerationConfig = Field(default_factory=CvGenerationConfig)
+    supabase: SupabaseSyncConfig = Field(default_factory=SupabaseSyncConfig)
     filters: ConfigFilters = Field(default_factory=ConfigFilters)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
 

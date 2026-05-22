@@ -124,6 +124,13 @@ cv_generation:
   output_dir: exports/candidatures
   mode: recruiter
 
+# Optional private Supabase sync for the future mobile/PWA app.
+# Requires SUPABASE_URL, SUPABASE_SECRET_KEY and SUPABASE_OWNER_ID in the environment.
+supabase:
+  enabled: false
+  bucket_name: candidate-documents
+  fail_run_on_error: false
+
 filters:
   exclude_terms:
     - data scientist

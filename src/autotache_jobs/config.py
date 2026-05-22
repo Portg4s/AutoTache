@@ -88,6 +88,7 @@ def summarize_config(config: AppConfig) -> str:
             f"- Discord active: {'oui' if config.notifications.discord_enabled else 'non'}",
             f"- Notification sans resultat: {'oui' if config.notifications.notify_when_no_results else 'non'}",
             f"- Generation CV recruiter activee: {'oui' if config.cv_generation.enabled else 'non'}",
+            f"- Synchronisation Supabase activee: {'oui' if config.supabase.enabled else 'non'}",
             f"- Termes inclus: {len(config.filters.include_terms)}",
             f"- Termes exclus: {len(config.filters.exclude_terms)}",
         ]

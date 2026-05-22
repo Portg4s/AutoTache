@@ -8,4 +8,5 @@ Jinja2
 playwright
 python-docx
 docxtpl
+supabase
 pytest

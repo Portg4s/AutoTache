@@ -27,6 +27,9 @@ from .sources.jooble import JoobleSource
 from .sources.remotive import RemotiveSource
 from .sources.themuse import TheMuseSource
 from .storage import filter_new_offers, load_seen_offer_ids, save_seen_offer_ids, update_seen_ids
+from .supabase.client import create_supabase_client
+from .supabase.settings import SupabaseSettingsError, load_supabase_settings_from_env
+from .supabase.synchronizer import SupabaseSyncResult, sync_run_to_supabase
 
 
 def run_job_search(
@@ -84,9 +87,6 @@ def run_job_search(
         else None
     )
 
-    if new_offers:
-        save_seen_offer_ids(seen_ids_path, update_seen_ids(seen_ids, new_offers))
-
     summary = {
         "total_raw": len(raw_offers),
         "total_normalized": len(normalized_offers),
@@ -117,9 +117,25 @@ def run_job_search(
         "discord_sent": False,
         "discord_status": "disabled",
         "discord_error": None,
+        "supabase_sync_enabled": bool(config.supabase.enabled),
+        "supabase_sync_success": False,
+        "supabase_offers_synced_count": 0,
+        "supabase_applications_synced_count": 0,
+        "supabase_documents_synced_count": 0,
+        "supabase_sync_error": None,
     }
     if include_debug_offers:
         summary["debug_offers"] = unique_normalized_offers
+    _sync_supabase_if_needed(
+        config,
+        summary,
+        unique_normalized_offers,
+        new_offers,
+        generated_cvs,
+        generated_pdfs,
+    )
+    if _should_save_seen_offer_ids(config, new_offers, generated_cvs, summary):
+        save_seen_offer_ids(seen_ids_path, update_seen_ids(seen_ids, new_offers))
     _notify_discord_if_needed(config, env_settings, summary, discord_sender)
     return summary
 
@@ -461,3 +477,75 @@ def _notify_discord_if_needed(config: Any, env_settings: Any, summary: dict[str,
     summary["discord_sent"] = bool(result.get("sent"))
     summary["discord_status"] = result.get("status")
     summary["discord_error"] = result.get("error")
+
+
+def _sync_supabase_if_needed(
+    config: Any,
+    summary: dict[str, Any],
+    scored_offers: list[dict[str, Any]],
+    new_offers: list[dict[str, Any]],
+    generated_docx_paths: list[Path],
+    generated_pdf_paths: list[Path],
+) -> None:
+    supabase_config = getattr(config, "supabase", None)
+    if supabase_config is None or not supabase_config.enabled:
+        return
+
+    result: SupabaseSyncResult
+    try:
+        settings = load_supabase_settings_from_env()
+        client = create_supabase_client(settings)
+        result = sync_run_to_supabase(
+            client=client,
+            settings=settings,
+            summary=summary,
+            scored_offers=scored_offers,
+            new_offers=new_offers,
+            generated_docx_paths=generated_docx_paths,
+            generated_pdf_paths=generated_pdf_paths,
+            candidate_pack_paths=[path.parent for path in generated_docx_paths],
+            bucket_name=supabase_config.bucket_name,
+        )
+    except SupabaseSettingsError as exc:
+        result = SupabaseSyncResult(enabled=True, success=False, error=str(exc))
+    except Exception as exc:
+        result = SupabaseSyncResult(enabled=True, success=False, error=_safe_supabase_error(exc))
+
+    summary["supabase_sync_enabled"] = True
+    summary["supabase_sync_success"] = bool(result.success)
+    summary["supabase_offers_synced_count"] = result.offers_synced_count
+    summary["supabase_applications_synced_count"] = result.applications_synced_count
+    summary["supabase_documents_synced_count"] = result.documents_synced_count
+    summary["supabase_sync_error"] = result.error
+
+    if not result.success and supabase_config.fail_run_on_error:
+        raise RuntimeError(f"Synchronisation Supabase echouee: {result.error or 'erreur inconnue'}")
+
+
+def _safe_supabase_error(exc: Exception) -> str:
+    """Return a small non-sensitive error suitable for summaries."""
+
+    return type(exc).__name__
+
+
+def _should_save_seen_offer_ids(
+    config: Any,
+    new_offers: list[dict[str, Any]],
+    generated_docx_paths: list[Path],
+    summary: dict[str, Any],
+) -> bool:
+    if not new_offers:
+        return False
+
+    supabase_config = getattr(config, "supabase", None)
+    if supabase_config is None or not supabase_config.enabled:
+        return True
+
+    if summary.get("supabase_sync_success"):
+        return True
+
+    # When candidate documents exist, keeping the offer unseen guarantees an automatic retry.
+    if generated_docx_paths:
+        return False
+
+    return True

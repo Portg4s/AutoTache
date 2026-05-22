@@ -43,6 +43,9 @@ filters:
     assert config.cv_generation.profile_path == "profile/profil_maitre.yaml"
     assert config.cv_generation.output_dir == "exports/candidatures"
     assert config.cv_generation.mode == "recruiter"
+    assert config.supabase.enabled is False
+    assert config.supabase.bucket_name == "candidate-documents"
+    assert config.supabase.fail_run_on_error is False
     assert config.sources.france_travail.enabled is True
     assert config.sources.arbeitnow.enabled is False
     assert config.sources.arbeitnow.max_pages == 1
@@ -128,6 +131,35 @@ cv_generation:
     assert config.cv_generation.profile_path == "profile/profil_maitre.yaml"
     assert config.cv_generation.output_dir == "exports/candidatures"
     assert config.cv_generation.mode == "recruiter"
+
+
+def test_load_config_reads_supabase_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+keywords:
+  - wordpress
+communes:
+  - "75056"
+distance_km: 20
+contract_types:
+  - CDI
+days_back: 7
+supabase:
+  enabled: true
+  bucket_name: candidate-documents
+  fail_run_on_error: true
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    summary = summarize_config(config)
+
+    assert config.supabase.enabled is True
+    assert config.supabase.bucket_name == "candidate-documents"
+    assert config.supabase.fail_run_on_error is True
+    assert "- Synchronisation Supabase activee: oui" in summary
 
 
 def test_load_config_reads_sources_settings(tmp_path: Path) -> None:

@@ -1521,3 +1521,254 @@ def test_runner_discord_summary_uses_really_exported_offer_count(tmp_path: Path,
     assert summary["total_relevant"] == 1
     assert summary["total_new"] == 0
     assert calls[0][1]["total_new"] == 0
+
+
+def test_runner_does_not_call_supabase_when_sync_is_disabled(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    calls = []
+    monkeypatch.setattr(
+        runner_module,
+        "load_supabase_settings_from_env",
+        lambda: calls.append("settings"),
+    )
+
+    summary = run_job_search(
+        _config(),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert calls == []
+    assert summary["supabase_sync_enabled"] is False
+    assert summary["supabase_sync_success"] is False
+    assert summary["supabase_offers_synced_count"] == 0
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
+
+
+def test_runner_successful_supabase_sync_enriches_summary(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    sync_calls = []
+
+    monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
+    monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+
+    def fake_sync_run_to_supabase(**kwargs):
+        sync_calls.append(kwargs)
+        return runner_module.SupabaseSyncResult(
+            enabled=True,
+            success=True,
+            run_synced=True,
+            offers_synced_count=1,
+            applications_synced_count=0,
+            documents_synced_count=0,
+        )
+
+    monkeypatch.setattr(runner_module, "sync_run_to_supabase", fake_sync_run_to_supabase)
+
+    summary = run_job_search(
+        _config(supabase={"enabled": True, "bucket_name": "candidate-documents"}),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert len(sync_calls) == 1
+    assert sync_calls[0]["scored_offers"][0]["id_offre"] == "A1"
+    assert sync_calls[0]["new_offers"][0]["id_offre"] == "A1"
+    assert summary["supabase_sync_enabled"] is True
+    assert summary["supabase_sync_success"] is True
+    assert summary["supabase_offers_synced_count"] == 1
+    assert summary["supabase_sync_error"] is None
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
+
+
+def test_runner_resilient_supabase_error_does_not_break_existing_result(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
+    monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+
+    def fail_sync(**kwargs):
+        raise RuntimeError("secret-value from backend")
+
+    monkeypatch.setattr(runner_module, "sync_run_to_supabase", fail_sync)
+
+    summary = run_job_search(
+        _config(supabase={"enabled": True, "bucket_name": "candidate-documents", "fail_run_on_error": False}),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["total_new"] == 1
+    assert summary["supabase_sync_success"] is False
+    assert summary["supabase_sync_error"] == "RuntimeError"
+    assert "secret-value" not in str(summary)
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
+
+
+def test_runner_fail_run_on_supabase_error_raises_clean_error(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
+    monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+    monkeypatch.setattr(runner_module, "sync_run_to_supabase", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("secret-value")))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        run_job_search(
+            _config(supabase={"enabled": True, "bucket_name": "candidate-documents", "fail_run_on_error": True}),
+            _env(),
+            client=client,
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+
+    message = str(exc_info.value)
+    assert "Synchronisation Supabase echouee" in message
+    assert "RuntimeError" in message
+    assert "secret-value" not in message
+    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
+
+
+def test_runner_successful_supabase_sync_persists_seen_offer_with_candidate_pack(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
+    monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+    monkeypatch.setattr(
+        runner_module,
+        "sync_run_to_supabase",
+        lambda **kwargs: runner_module.SupabaseSyncResult(
+            enabled=True,
+            success=True,
+            run_synced=True,
+            offers_synced_count=1,
+            applications_synced_count=1,
+            documents_synced_count=1,
+        ),
+    )
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
+
+    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
+        output_path = Path(output_dir) / "cv.docx"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("docx", encoding="utf-8")
+        return output_path
+
+    def fake_generate_cv_pdf(*, offer, profile, output_dir):
+        output_path = Path(output_dir) / "cv.pdf"
+        output_path.write_bytes(b"pdf")
+        return output_path
+
+    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
+
+    summary = run_job_search(
+        _config(
+            cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")},
+            supabase={"enabled": True, "bucket_name": "candidate-documents"},
+        ),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["total_generated_cvs"] == 1
+    assert summary["supabase_sync_success"] is True
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
+
+
+def test_runner_resilient_supabase_error_with_candidate_pack_keeps_offer_unseen(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    discord_calls = []
+    monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
+    monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+    monkeypatch.setattr(
+        runner_module,
+        "sync_run_to_supabase",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("secret-value")),
+    )
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
+
+    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
+        output_path = Path(output_dir) / "cv.docx"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("docx", encoding="utf-8")
+        return output_path
+
+    def fake_generate_cv_pdf(*, offer, profile, output_dir):
+        output_path = Path(output_dir) / "cv.pdf"
+        output_path.write_bytes(b"pdf")
+        return output_path
+
+    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
+
+    summary = run_job_search(
+        _config(
+            cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")},
+            supabase={"enabled": True, "bucket_name": "candidate-documents", "fail_run_on_error": False},
+            notifications={"discord_enabled": True, "notify_when_no_results": True},
+        ),
+        _env(discord_webhook_url="https://discord.test/webhook"),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        discord_sender=lambda webhook_url, payload: discord_calls.append(payload.copy())
+        or {"sent": True, "status": "sent", "error": None},
+    )
+
+    assert summary["total_new"] == 1
+    assert summary["export_path"] is not None
+    assert summary["supabase_sync_success"] is False
+    assert summary["supabase_sync_error"] == "RuntimeError"
+    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
+    assert discord_calls[0]["supabase_sync_success"] is False
+    assert "secret-value" not in str(summary)
+
+
+def test_runner_fail_run_on_supabase_error_with_candidate_pack_keeps_offer_unseen(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
+    monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+    monkeypatch.setattr(
+        runner_module,
+        "sync_run_to_supabase",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("secret-value")),
+    )
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
+
+    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
+        output_path = Path(output_dir) / "cv.docx"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("docx", encoding="utf-8")
+        return output_path
+
+    def fake_generate_cv_pdf(*, offer, profile, output_dir):
+        output_path = Path(output_dir) / "cv.pdf"
+        output_path.write_bytes(b"pdf")
+        return output_path
+
+    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        run_job_search(
+            _config(
+                cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")},
+                supabase={"enabled": True, "bucket_name": "candidate-documents", "fail_run_on_error": True},
+            ),
+            _env(),
+            client=client,
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+
+    assert "secret-value" not in str(exc_info.value)
+    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()

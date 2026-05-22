@@ -149,6 +149,11 @@ def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: boo
         status_lines.append("R\u00e9sum\u00e9 g\u00e9n\u00e9r\u00e9 avec succ\u00e8s.")
     if has_tracking_attachment:
         status_lines.append("Le fichier de suivi cumulatif est joint.")
+    if summary.get("supabase_sync_enabled"):
+        if summary.get("supabase_sync_success"):
+            status_lines.append("\u2601\ufe0f Application mobile : donn\u00e9es synchronis\u00e9es")
+        else:
+            status_lines.append("\u26a0\ufe0f Application mobile : synchronisation indisponible")
     fields.append({"name": "\u2139\ufe0f Statut", "value": "\n".join(status_lines), "inline": False})
 
     return {

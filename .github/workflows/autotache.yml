@@ -38,7 +38,9 @@ jobs:
         run: |
           mkdir -p data
           mkdir -p exports/offres
+          mkdir -p exports/candidatures
           mkdir -p exports/debug
+          mkdir -p profile
           mkdir -p logs
 
       - name: Create temporary .env
@@ -70,6 +72,30 @@ jobs:
 
           content = "\n".join(f"{key}={value}" for key, value in values.items())
           Path(".env").write_text(content + "\n", encoding="utf-8")
+          PY
+
+      - name: Create temporary CV profile
+        env:
+          CV_PROFILE_YAML_B64: ${{ secrets.CV_PROFILE_YAML_B64 }}
+        run: |
+          python - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          encoded_profile = os.environ.get("CV_PROFILE_YAML_B64", "").strip()
+          if not encoded_profile:
+              raise SystemExit("Secret CV_PROFILE_YAML_B64 manquant: generation CV automatique activee.")
+
+          try:
+              profile_content = base64.b64decode(encoded_profile, validate=True)
+          except Exception as exc:
+              raise SystemExit("Secret CV_PROFILE_YAML_B64 invalide: impossible de reconstruire le profil CV.") from exc
+
+          profile_path = Path("profile/profil_maitre.yaml")
+          profile_path.parent.mkdir(parents=True, exist_ok=True)
+          profile_path.write_bytes(profile_content)
+          profile_path.chmod(0o600)
           PY
 
       - name: Create temporary cloud config
@@ -165,6 +191,12 @@ jobs:
             discord_enabled: true
             notify_when_no_results: true
 
+          cv_generation:
+            enabled: true
+            profile_path: profile/profil_maitre.yaml
+            output_dir: exports/candidatures
+            mode: recruiter
+
           filters:
             exclude_terms:
               - data scientist
@@ -253,7 +285,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: autotache-exports
-          path: exports/
+          path: |
+            exports/
+            !exports/candidatures/**
           if-no-files-found: warn
 
       - name: Upload logs artifact

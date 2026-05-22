@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"- Export CSV principal: {summary['export_path'] or 'aucun'}")
     print(f"- Export Excel principal: {summary['xlsx_export_path'] or 'aucun'}")
     print(f"- Export Excel suivi cumulatif: {summary['tracking_xlsx_export_path'] or 'aucun'}")
+    print(f"- CV recruiter generes: {summary.get('total_generated_cvs', 0)}")
     print(f"- Export CSV debug: {summary['debug_export_path'] or 'aucun'}")
     print(f"- Export Excel debug: {summary['debug_xlsx_export_path'] or 'aucun'}")
     print(f"- IDs vus: {summary['seen_ids_path']}")

@@ -135,14 +135,7 @@ def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: boo
         },
         {
             "name": "\U0001F4C1 Exports",
-            "value": "\n".join(
-                [
-                    f"\U0001F4CC Suivi: {_filename_or_none(summary.get('tracking_xlsx_export_path'))}",
-                    f"\U0001F195 Nouvelles offres: {_filename_or_none(summary.get('xlsx_export_path'))}",
-                    f"\U0001F9EA Debug: {_filename_or_none(summary.get('debug_xlsx_export_path'))}",
-                    "Fichiers disponibles dans le dossier exports/",
-                ]
-            ),
+            "value": "\n".join(_export_lines(summary)),
             "inline": False,
         },
     ]
@@ -197,6 +190,19 @@ def _source_lines(summary: dict[str, Any]) -> list[str]:
             lines.append(f"{source_name} : {fetched} r\u00e9cup\u00e9r\u00e9es")
 
     return lines or ["Aucune offre r\u00e9cup\u00e9r\u00e9e"]
+
+
+def _export_lines(summary: dict[str, Any]) -> list[str]:
+    lines = [
+        f"\U0001F4CC Suivi: {_filename_or_none(summary.get('tracking_xlsx_export_path'))}",
+        f"\U0001F195 Nouvelles offres: {_filename_or_none(summary.get('xlsx_export_path'))}",
+        f"\U0001F9EA Debug: {_filename_or_none(summary.get('debug_xlsx_export_path'))}",
+    ]
+    total_generated_cvs = int(summary.get("total_generated_cvs", 0) or 0)
+    if total_generated_cvs > 0:
+        lines.append(f"\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: {total_generated_cvs} (disponibles sur OneDrive)")
+    lines.append("Fichiers disponibles dans le dossier exports/")
+    return lines
 
 
 def _embed_color(summary: dict[str, Any], review_count: int) -> int:

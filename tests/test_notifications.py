@@ -108,6 +108,46 @@ def test_discord_summary_contains_decision_counts_and_best_score() -> None:
     assert "\U0001F9EA Debug: debug_offres.xlsx" in payload_text
 
 
+def test_discord_summary_mentions_generated_recruiter_cvs() -> None:
+    payload = _send_and_capture(
+        {
+            "total_raw": 2,
+            "total_relevant": 2,
+            "total_new": 2,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 1, "Rejet\u00e9": 0},
+            "total_generated_cvs": 2,
+            "xlsx_export_path": "exports/offres/offres.xlsx",
+            "tracking_xlsx_export_path": "exports/offres/offres_suivi.xlsx",
+            "debug_xlsx_export_path": None,
+        }
+    )
+
+    assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 2 (disponibles sur OneDrive)" in str(payload)
+
+
+def test_discord_summary_omits_generated_recruiter_cvs_when_count_is_zero_or_missing() -> None:
+    payload_with_zero = _send_and_capture(
+        {
+            "total_raw": 1,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+            "total_generated_cvs": 0,
+        }
+    )
+    payload_without_count = _send_and_capture(
+        {
+            "total_raw": 1,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+        }
+    )
+
+    assert "CV recruiter" not in str(payload_with_zero)
+    assert "CV recruiter" not in str(payload_without_count)
+
+
 def test_discord_summary_shows_only_sources_with_fetched_offers() -> None:
     payload = _send_and_capture(
         {
@@ -203,6 +243,7 @@ def test_discord_summary_sends_tracking_xlsx_as_attachment_when_file_exists(tmp_
             "total_relevant": 1,
             "total_new": 1,
             "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+            "total_generated_cvs": 3,
             "tracking_xlsx_export_path": str(tracking_file),
         },
         http_post=fake_post,
@@ -269,6 +310,7 @@ def test_discord_summary_falls_back_to_json_when_attachment_send_times_out(tmp_p
             "total_relevant": 1,
             "total_new": 1,
             "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+            "total_generated_cvs": 3,
             "tracking_xlsx_export_path": str(tracking_file),
         },
         http_post=fake_post,
@@ -285,6 +327,8 @@ def test_discord_summary_falls_back_to_json_when_attachment_send_times_out(tmp_p
     assert result["status"] == "sent_without_attachment"
     assert "ReadTimeout" in result["error"]
     assert "https://discord.test/webhook" not in result["error"]
+    assert "\U0001F4C4 CV recruiter g\u00e9n\u00e9r\u00e9s: 3 (disponibles sur OneDrive)" in str(calls[1]["json"])
+    assert "files" not in calls[1]
 
 
 def test_discord_summary_without_webhook_returns_clear_status() -> None:

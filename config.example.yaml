@@ -118,6 +118,12 @@ notifications:
   discord_enabled: false
   notify_when_no_results: false
 
+cv_generation:
+  enabled: false
+  profile_path: profile/profil_maitre.yaml
+  output_dir: exports/candidatures
+  mode: recruiter
+
 filters:
   exclude_terms:
     - data scientist

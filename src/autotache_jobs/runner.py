@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 import time
 from typing import Any
+
+from autotache_jobs.cv.docx_generator import generate_cv_docx
+from autotache_jobs.cv.profile import load_profile
 
 from .exporter import export_offers_to_csv, export_offers_to_tracking_xlsx, export_offers_to_xlsx
 from .france_travail_client import FranceTravailClient
@@ -69,6 +75,7 @@ def run_job_search(
     export_path = export_offers_to_csv(new_offers, main_export_dir)
     xlsx_export_path = export_offers_to_xlsx(new_offers, main_export_dir) if export_path else None
     tracking_xlsx_export_path = export_offers_to_tracking_xlsx(new_offers, main_export_dir)
+    generated_cvs = _generate_cv_documents_if_needed(config, new_offers, export_dir)
     debug_export_path = _export_debug_offers(unique_normalized_offers, debug_export_dir) if include_debug_offers else None
     debug_xlsx_export_path = (
         _export_debug_offers_to_xlsx(unique_normalized_offers, debug_export_dir)
@@ -89,6 +96,9 @@ def run_job_search(
         "export_path": str(export_path) if export_path else None,
         "xlsx_export_path": str(xlsx_export_path) if xlsx_export_path else None,
         "tracking_xlsx_export_path": str(tracking_xlsx_export_path) if tracking_xlsx_export_path else None,
+        "generated_cvs": [str(path) for path in generated_cvs],
+        "candidate_pack_paths": [str(path.parent) for path in generated_cvs],
+        "total_generated_cvs": len(generated_cvs),
         "debug_export_path": str(debug_export_path) if debug_export_path else None,
         "debug_xlsx_export_path": str(debug_xlsx_export_path) if debug_xlsx_export_path else None,
         "seen_ids_path": str(seen_ids_path),
@@ -247,6 +257,82 @@ def _with_score(offer: dict) -> dict:
 
 def _is_exportable_decision(offer: dict) -> bool:
     return offer.get("decision") in {DECISION_RELEVANT, DECISION_REVIEW}
+
+
+def _generate_cv_documents_if_needed(config: Any, new_offers: list[dict], export_dir: str | Path) -> list[Path]:
+    cv_config = getattr(config, "cv_generation", None)
+    if not new_offers or cv_config is None or not cv_config.enabled:
+        return []
+
+    profile = load_profile(cv_config.profile_path)
+    output_root = _resolve_cv_output_root(cv_config.output_dir, export_dir)
+    generated_paths: list[Path] = []
+
+    for offer in new_offers:
+        target_dir = output_root / _candidate_folder_name(offer)
+        docx_path = generate_cv_docx(
+            offer=offer,
+            profile=profile,
+            output_dir=target_dir,
+            mode="recruiter",
+        )
+        _write_candidate_metadata(offer, target_dir, docx_path)
+        generated_paths.append(docx_path)
+
+    return generated_paths
+
+
+def _resolve_cv_output_root(configured_output_dir: str | Path, export_dir: str | Path) -> Path:
+    output_path = Path(configured_output_dir)
+    if output_path.is_absolute():
+        return output_path
+
+    parts = output_path.parts
+    if parts and parts[0] == "exports":
+        return Path(export_dir).parent.joinpath(*parts)
+    return output_path
+
+
+def _candidate_folder_name(offer: dict[str, Any]) -> str:
+    return "_".join(
+        [
+            _slug(offer.get("id_offre")),
+            _slug(offer.get("entreprise")),
+            _slug(offer.get("titre")),
+        ]
+    )
+
+
+def _write_candidate_metadata(offer: dict[str, Any], target_dir: Path, docx_path: Path) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "offer_id": _metadata_value(offer.get("id_offre")),
+        "title": _metadata_value(offer.get("titre")),
+        "company": _metadata_value(offer.get("entreprise")),
+        "location": _metadata_value(offer.get("localisation")),
+        "contract_type": _metadata_value(offer.get("type_contrat")),
+        "source": _metadata_value(offer.get("source")),
+        "decision": _metadata_value(offer.get("decision")),
+        "score_total": offer.get("score_total"),
+        "offer_url": _metadata_value(offer.get("url_offre")),
+        "generated_docx": docx_path.name,
+    }
+    metadata_path = target_dir / "metadata.json"
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _metadata_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _slug(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text[:80] or "non_renseigne"
 
 
 def _count_decisions(offers: list[dict]) -> dict[str, int]:

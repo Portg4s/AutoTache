@@ -33,6 +33,27 @@ class NotificationConfig(BaseModel):
     notify_when_no_results: bool = False
 
 
+class CvGenerationConfig(BaseModel):
+    """Automatic CV generation settings loaded from the local config file."""
+
+    enabled: bool = False
+    profile_path: str = "profile/profil_maitre.yaml"
+    output_dir: str = "exports/candidatures"
+    mode: str = "recruiter"
+
+    @field_validator("profile_path", "output_dir", "mode")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return value.strip() if value else ""
+
+    @field_validator("mode")
+    @classmethod
+    def recruiter_only(cls, value: str) -> str:
+        if value != "recruiter":
+            raise ValueError("seul le mode recruiter est supporte pour la generation automatique")
+        return value
+
+
 class SourceToggleConfig(BaseModel):
     """Enable or disable one offer source."""
 
@@ -179,6 +200,7 @@ class AppConfig(BaseModel):
     allow_apprenticeship: bool = False
     api: ApiConfig = Field(default_factory=ApiConfig)
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
+    cv_generation: CvGenerationConfig = Field(default_factory=CvGenerationConfig)
     filters: ConfigFilters = Field(default_factory=ConfigFilters)
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
 

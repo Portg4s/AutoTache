@@ -39,6 +39,10 @@ filters:
     assert config.communes == ["75056"]
     assert config.api.request_delay_seconds == 0.8
     assert config.api.max_retries == 3
+    assert config.cv_generation.enabled is False
+    assert config.cv_generation.profile_path == "profile/profil_maitre.yaml"
+    assert config.cv_generation.output_dir == "exports/candidatures"
+    assert config.cv_generation.mode == "recruiter"
     assert config.sources.france_travail.enabled is True
     assert config.sources.arbeitnow.enabled is False
     assert config.sources.arbeitnow.max_pages == 1
@@ -95,6 +99,35 @@ api:
 
     assert config.api.request_delay_seconds == 1.2
     assert config.api.max_retries == 2
+
+
+def test_load_config_reads_cv_generation_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+keywords:
+  - wordpress
+communes:
+  - "75056"
+distance_km: 20
+contract_types:
+  - CDI
+days_back: 7
+cv_generation:
+  enabled: true
+  profile_path: profile/profil_maitre.yaml
+  output_dir: exports/candidatures
+  mode: recruiter
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.cv_generation.enabled is True
+    assert config.cv_generation.profile_path == "profile/profil_maitre.yaml"
+    assert config.cv_generation.output_dir == "exports/candidatures"
+    assert config.cv_generation.mode == "recruiter"
 
 
 def test_load_config_reads_sources_settings(tmp_path: Path) -> None:

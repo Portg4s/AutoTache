@@ -4,12 +4,13 @@ import re
 from pathlib import Path
 
 import httpx
+import pytest
 from openpyxl import load_workbook
 
 from autotache_jobs.models import AppConfig, FranceTravailEnv
 import autotache_jobs.runner as runner_module
 from autotache_jobs.runner import run_job_search
-from autotache_jobs.scoring import DECISION_RELEVANT, DECISION_REVIEW
+from autotache_jobs.scoring import DECISION_REJECTED, DECISION_RELEVANT, DECISION_REVIEW
 
 
 class FakeFranceTravailClient:
@@ -1322,6 +1323,140 @@ def test_runner_main_export_includes_review_and_relevant_decisions(tmp_path: Pat
     assert [row["id_offre"] for row in rows] == ["PERTINENT", "REVIEW"]
     assert [offer["id_offre"] for offer in summary["debug_offers"]] == ["PERTINENT", "REVIEW", "REJECTED"]
     assert json.loads(Path(summary["seen_ids_path"]).read_text(encoding="utf-8")) == ["PERTINENT", "REVIEW"]
+
+
+def test_runner_generates_recruiter_docx_for_each_new_exportable_offer(tmp_path: Path, monkeypatch) -> None:
+    first_offer = _wordpress_offer("ID 1/é")
+    first_offer["entreprise"] = {"nom": "Agence Test"}
+    first_offer["intitule"] = "Integrateur front React"
+    second_offer = _wordpress_offer("ID 2")
+    second_offer["entreprise"] = {"nom": "Agence Test"}
+    second_offer["intitule"] = "Integrateur front React"
+    client = FakeFranceTravailClient([[first_offer, second_offer]])
+    loaded_profiles = []
+    generated_calls = []
+
+    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
+        generated_calls.append((offer, profile, Path(output_dir), mode))
+        output_path = Path(output_dir) / f"CV_{runner_module._slug(offer['id_offre'])}.docx"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("fake docx", encoding="utf-8")
+        return output_path
+
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"ID 1/é": DECISION_RELEVANT, "ID 2": DECISION_REVIEW}))
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: loaded_profiles.append(path) or object())
+    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
+
+    summary = run_job_search(
+        _config(
+            cv_generation={
+                "enabled": True,
+                "profile_path": str(tmp_path / "profile.yaml"),
+                "output_dir": "exports/candidatures",
+                "mode": "recruiter",
+            }
+        ),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert loaded_profiles == [str(tmp_path / "profile.yaml")]
+    assert summary["total_new"] == 2
+    assert summary["total_generated_cvs"] == 2
+    assert [Path(path).name for path in summary["generated_cvs"]] == ["CV_id_1_e.docx", "CV_id_2.docx"]
+    assert [Path(path).name for path in summary["candidate_pack_paths"]] == [
+        "id_1_e_agence_test_integrateur_front_react",
+        "id_2_agence_test_integrateur_front_react",
+    ]
+    assert len(generated_calls) == 2
+    assert [call[3] for call in generated_calls] == ["recruiter", "recruiter"]
+    assert generated_calls[0][2].name == "id_1_e_agence_test_integrateur_front_react"
+    assert generated_calls[1][2].name == "id_2_agence_test_integrateur_front_react"
+
+    metadata_path = generated_calls[0][2] / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata == {
+        "offer_id": "ID 1/é",
+        "title": "Integrateur front React",
+        "company": "Agence Test",
+        "location": "Dijon 21000",
+        "contract_type": "CDI",
+        "source": "France Travail",
+        "decision": DECISION_RELEVANT,
+        "score_total": 90,
+        "offer_url": "https://candidat.francetravail.fr/offres/recherche/detail/ID 1/é",
+        "generated_docx": "CV_id_1_e.docx",
+    }
+    assert str(tmp_path / "profile.yaml") not in metadata_path.read_text(encoding="utf-8")
+
+
+def test_runner_does_not_load_profile_when_cv_generation_is_disabled(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    calls = []
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: calls.append(path) or object())
+    monkeypatch.setattr(runner_module, "generate_cv_docx", lambda **kwargs: calls.append(kwargs) or Path("ignored.docx"))
+
+    summary = run_job_search(
+        _config(cv_generation={"enabled": False, "profile_path": str(tmp_path / "profile.yaml")}),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["total_new"] == 1
+    assert summary["total_generated_cvs"] == 0
+    assert summary["generated_cvs"] == []
+    assert summary["candidate_pack_paths"] == []
+    assert calls == []
+
+
+def test_runner_does_not_generate_cv_for_seen_or_rejected_offers(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "seen_offer_ids.json").write_text('["SEEN"]\n', encoding="utf-8")
+    client = FakeFranceTravailClient([[_wordpress_offer("SEEN"), _wordpress_offer("REJECTED")]])
+    calls = []
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"SEEN": DECISION_RELEVANT, "REJECTED": DECISION_REJECTED}))
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: calls.append(("profile", path)) or object())
+    monkeypatch.setattr(runner_module, "generate_cv_docx", lambda **kwargs: calls.append(("docx", kwargs)) or Path("ignored.docx"))
+
+    summary = run_job_search(
+        _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["total_exportable"] == 1
+    assert summary["total_new"] == 0
+    assert summary["total_generated_cvs"] == 0
+    assert summary["generated_cvs"] == []
+    assert summary["candidate_pack_paths"] == []
+    assert calls == []
+
+
+def test_runner_does_not_save_seen_ids_when_cv_generation_fails(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+
+    def fail_generate_cv_docx(**kwargs):
+        raise RuntimeError("generation failed")
+
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
+    monkeypatch.setattr(runner_module, "generate_cv_docx", fail_generate_cv_docx)
+
+    with pytest.raises(RuntimeError, match="generation failed"):
+        run_job_search(
+            _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
+            _env(),
+            client=client,
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+        )
+
+    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
 
 
 def test_runner_discord_summary_uses_really_exported_offer_count(tmp_path: Path, monkeypatch) -> None:

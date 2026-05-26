@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+from autotache_jobs.scoring import DECISION_REJECTED, DECISION_RELEVANT, DECISION_REVIEW
 from autotache_jobs.supabase.settings import SupabaseSettings
 from autotache_jobs.supabase.synchronizer import DOCX_MIME_TYPE, PDF_MIME_TYPE, sync_run_to_supabase
 
@@ -127,7 +128,7 @@ def _settings(github_run_id: str = "12345") -> SupabaseSettings:
     )
 
 
-def _offer(offer_id: str, decision: str = "Pertinent") -> dict[str, Any]:
+def _offer(offer_id: str, decision: str = DECISION_RELEVANT) -> dict[str, Any]:
     return {
         "id_offre": offer_id,
         "source": "France Travail",
@@ -152,7 +153,7 @@ def test_sync_upserts_all_scored_offers_and_run_history() -> None:
         client=client,
         settings=_settings(),
         summary={"total_raw": 2, "total_relevant": 1, "total_new": 1, "total_generated_cvs": 0},
-        scored_offers=[_offer("A1"), _offer("R1", decision="Rejet\u00e9")],
+        scored_offers=[_offer("A1"), _offer("R1", decision=DECISION_REJECTED)],
         new_offers=[],
         generated_docx_paths=[],
         generated_pdf_paths=[],
@@ -166,10 +167,116 @@ def test_sync_upserts_all_scored_offers_and_run_history() -> None:
     assert result.success is True
     assert result.offers_synced_count == 2
     assert offers_call["on_conflict"] == "owner_id,source,external_offer_id"
-    assert [payload["decision"] for payload in offers_call["payload"]] == ["Pertinent", "Rejet\u00e9"]
+    assert [payload["decision"] for payload in offers_call["payload"]] == [DECISION_RELEVANT, DECISION_REJECTED]
     assert runs_call["operation"] == "upsert"
     assert runs_call["on_conflict"] == "owner_id,github_run_id"
     assert runs_call["payload"]["status"] == "completed"
+
+
+def test_sync_accepts_all_valid_scoring_decisions() -> None:
+    client = FakeSupabaseClient()
+
+    result = sync_run_to_supabase(
+        client=client,
+        settings=_settings(),
+        summary={"total_raw": 3, "total_relevant": 1, "total_new": 0, "total_generated_cvs": 0},
+        scored_offers=[
+            _offer("A1", decision=DECISION_RELEVANT),
+            _offer("V1", decision=DECISION_REVIEW),
+            _offer("R1", decision=DECISION_REJECTED),
+        ],
+        new_offers=[],
+        generated_docx_paths=[],
+        generated_pdf_paths=[],
+        candidate_pack_paths=[],
+        bucket_name="candidate-documents",
+    )
+
+    offers_call = next(call for call in client.calls if call["table"] == "offers" and call["operation"] == "upsert")
+
+    assert result.success is True
+    assert [payload["decision"] for payload in offers_call["payload"]] == [
+        DECISION_RELEVANT,
+        DECISION_REVIEW,
+        DECISION_REJECTED,
+    ]
+
+
+def test_sync_rejects_missing_scoring_decision_before_supabase_calls() -> None:
+    client = FakeSupabaseClient()
+    offer = _offer("A1")
+    del offer["decision"]
+
+    try:
+        sync_run_to_supabase(
+            client=client,
+            settings=_settings(),
+            summary={"total_raw": 1},
+            scored_offers=[offer],
+            new_offers=[],
+            generated_docx_paths=[],
+            generated_pdf_paths=[],
+            candidate_pack_paths=[],
+            bucket_name="candidate-documents",
+        )
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Une offre sans decision devrait echouer.")
+
+    assert message == "Offre sans decision de scoring valide pour la synchronisation Supabase."
+    assert client.calls == []
+    assert client.uploads == []
+
+
+def test_sync_rejects_empty_scoring_decision_before_supabase_calls() -> None:
+    client = FakeSupabaseClient()
+
+    try:
+        sync_run_to_supabase(
+            client=client,
+            settings=_settings(),
+            summary={"total_raw": 1},
+            scored_offers=[_offer("A1", decision="")],
+            new_offers=[],
+            generated_docx_paths=[],
+            generated_pdf_paths=[],
+            candidate_pack_paths=[],
+            bucket_name="candidate-documents",
+        )
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Une offre avec decision vide devrait echouer.")
+
+    assert message == "Offre sans decision de scoring valide pour la synchronisation Supabase."
+    assert client.calls == []
+    assert client.uploads == []
+
+
+def test_sync_rejects_unknown_scoring_decision_before_supabase_calls() -> None:
+    client = FakeSupabaseClient()
+
+    try:
+        sync_run_to_supabase(
+            client=client,
+            settings=_settings(),
+            summary={"total_raw": 1},
+            scored_offers=[_offer("A1", decision="Inconnue")],
+            new_offers=[],
+            generated_docx_paths=[],
+            generated_pdf_paths=[],
+            candidate_pack_paths=[],
+            bucket_name="candidate-documents",
+        )
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Une decision inconnue devrait echouer.")
+
+    assert message == "Offre sans decision de scoring valide pour la synchronisation Supabase."
+    assert client.calls == []
+    assert client.uploads == []
 
 
 def test_sync_uploads_private_documents_and_creates_application_without_html_or_profile(tmp_path: Path) -> None:

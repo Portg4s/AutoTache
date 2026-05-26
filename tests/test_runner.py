@@ -1547,12 +1547,13 @@ def test_runner_does_not_call_supabase_when_sync_is_disabled(tmp_path: Path, mon
     assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
 
 
-def test_runner_successful_supabase_sync_enriches_summary(tmp_path: Path, monkeypatch) -> None:
-    client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+def test_runner_successful_supabase_sync_receives_scored_offers(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("A1"), _wordpress_offer("R1")]])
     sync_calls = []
 
     monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
     monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": DECISION_RELEVANT, "R1": DECISION_REJECTED}))
 
     def fake_sync_run_to_supabase(**kwargs):
         sync_calls.append(kwargs)
@@ -1560,7 +1561,7 @@ def test_runner_successful_supabase_sync_enriches_summary(tmp_path: Path, monkey
             enabled=True,
             success=True,
             run_synced=True,
-            offers_synced_count=1,
+            offers_synced_count=len(kwargs["scored_offers"]),
             applications_synced_count=0,
             documents_synced_count=0,
         )
@@ -1576,11 +1577,15 @@ def test_runner_successful_supabase_sync_enriches_summary(tmp_path: Path, monkey
     )
 
     assert len(sync_calls) == 1
-    assert sync_calls[0]["scored_offers"][0]["id_offre"] == "A1"
-    assert sync_calls[0]["new_offers"][0]["id_offre"] == "A1"
+    scored_offers = sync_calls[0]["scored_offers"]
+    rejected_offer = next(offer for offer in scored_offers if offer["id_offre"] == "R1")
+    assert [offer["id_offre"] for offer in scored_offers] == ["A1", "R1"]
+    assert all({"decision", "score_total", "score_reason", "score_details"} <= offer.keys() for offer in scored_offers)
+    assert rejected_offer["decision"] == DECISION_REJECTED
+    assert [offer["id_offre"] for offer in sync_calls[0]["new_offers"]] == ["A1"]
     assert summary["supabase_sync_enabled"] is True
     assert summary["supabase_sync_success"] is True
-    assert summary["supabase_offers_synced_count"] == 1
+    assert summary["supabase_offers_synced_count"] == 2
     assert summary["supabase_sync_error"] is None
     assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
 

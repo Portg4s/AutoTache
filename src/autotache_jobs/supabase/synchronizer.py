@@ -7,11 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from autotache_jobs.scoring import DECISION_REJECTED, DECISION_RELEVANT, DECISION_REVIEW
 from autotache_jobs.supabase.settings import SupabaseSettings
 
 
 PDF_MIME_TYPE = "application/pdf"
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+VALID_SCORING_DECISIONS = {DECISION_RELEVANT, DECISION_REVIEW, DECISION_REJECTED}
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ def sync_run_to_supabase(
     """Publish scored offers, run history, and generated candidate packs."""
 
     _validate_candidate_pack_inputs(new_offers, generated_docx_paths, generated_pdf_paths, candidate_pack_paths)
+    _validate_scored_offer_decisions(scored_offers)
 
     now = datetime.now(timezone.utc).isoformat()
     offers_payload = [_offer_payload(offer, settings.owner_id, now) for offer in scored_offers if offer.get("id_offre")]
@@ -152,6 +155,14 @@ def _validate_candidate_pack_inputs(
             raise ValueError("Pack candidature incoherent: PDF manquant ou invalide.")
         if docx_path.parent != pack_path or pdf_path.parent != pack_path:
             raise ValueError("Pack candidature incoherent: dossier de candidature inattendu.")
+
+
+def _validate_scored_offer_decisions(scored_offers: list[dict[str, Any]]) -> None:
+    for offer in scored_offers:
+        if not offer.get("id_offre"):
+            continue
+        if offer.get("decision") not in VALID_SCORING_DECISIONS:
+            raise ValueError("Offre sans decision de scoring valide pour la synchronisation Supabase.")
 
 
 def _sync_run(client: Any, settings: SupabaseSettings, summary: dict[str, Any]) -> None:

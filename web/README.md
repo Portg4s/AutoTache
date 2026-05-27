@@ -19,6 +19,16 @@ npm install
 npm run dev
 ```
 
+## Installation sur iPhone
+
+1. Ouvrir l'URL Vercel d'AutoTache dans Safari.
+2. Se connecter avec le compte existant.
+3. Appuyer sur le bouton Partager.
+4. Choisir `Sur l'écran d'accueil`.
+5. Lancer AutoTache depuis l'icône ajoutée.
+
+Cette version nécessite une connexion internet. Elle ne fournit pas encore de mode hors ligne ni de notifications.
+
 ## Variables publiques
 
 Créer un fichier local non versionné si nécessaire, à partir de `.env.example`:

@@ -108,6 +108,8 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
       : { data: [], error: null };
 
   const applications = mapApplicationRows(applicationRows, (documentsResult.data ?? []) as CandidateDocument[]);
+  const favoriteApplications = applications.filter((application) => application.favorite);
+  const otherApplications = applications.filter((application) => !application.favorite);
   const hasLoadError = Boolean(applicationResult.error || documentsResult.error);
   const resolvedSearchParams = await searchParams;
   const hasDocumentError = resolvedSearchParams?.document === "unavailable";
@@ -172,11 +174,35 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
             Aucune candidature à suivre pour le moment.
           </section>
         ) : (
-          <section className="flex flex-col gap-4">
-            {applications.map((application) => (
-              <ApplicationCard key={application.id} application={application} />
-            ))}
-          </section>
+          <div className="flex flex-col gap-6">
+            {favoriteApplications.length > 0 ? (
+              <section className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-slate-950">★ Favoris</h2>
+                  <span className="text-sm text-slate-500">{favoriteApplications.length}</span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {favoriteApplications.map((application) => (
+                    <ApplicationCard key={application.id} application={application} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {otherApplications.length > 0 ? (
+              <section className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-slate-950">Autres candidatures</h2>
+                  <span className="text-sm text-slate-500">{otherApplications.length}</span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {otherApplications.map((application) => (
+                    <ApplicationCard key={application.id} application={application} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
         )}
       </div>
     </main>

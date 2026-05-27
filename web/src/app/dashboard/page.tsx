@@ -1,16 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { logoutAction } from "@/app/actions";
+import { OffersList } from "./OffersList";
 import { createClient } from "@/lib/supabase/server";
 import type { Offer, Run } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
-
-const decisionStyle: Record<Offer["decision"], string> = {
-  Pertinent: "border-teal-200 bg-teal-50 text-teal-800",
-  "À vérifier": "border-amber-200 bg-amber-50 text-amber-800",
-  Rejeté: "border-slate-200 bg-slate-100 text-slate-700",
-};
 
 function formatDate(value?: string) {
   if (!value) {
@@ -150,56 +145,7 @@ export default async function DashboardPage() {
           </section>
         ) : null}
 
-        <section className="flex flex-col gap-3">
-          <h1 className="text-lg font-semibold text-slate-950">Offres scorées</h1>
-          {offers.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
-              Aucune offre synchronisée pour le moment.
-            </div>
-          ) : (
-            offers.map((offer) => (
-              <article key={offer.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-slate-950">{offer.title}</h2>
-                      <p className="mt-1 text-sm text-slate-600">{offer.company || "Entreprise non renseignée"}</p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${decisionStyle[offer.decision]}`}
-                    >
-                      {offer.decision}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-600">
-                    {offer.location ? <span className="rounded-full bg-slate-100 px-3 py-1">{offer.location}</span> : null}
-                    {offer.contract_type ? (
-                      <span className="rounded-full bg-slate-100 px-3 py-1">{offer.contract_type}</span>
-                    ) : null}
-                    <span className="rounded-full bg-slate-100 px-3 py-1">Score {offer.score_total}/100</span>
-                  </div>
-
-                  {offer.score_reason ? <p className="text-sm leading-6 text-slate-600">{offer.score_reason}</p> : null}
-
-                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm">
-                    <span className="text-slate-500">Vu le {formatDate(offer.last_seen_at)}</span>
-                    {offer.offer_url ? (
-                      <a
-                        href={offer.offer_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-teal-700 hover:text-teal-900"
-                      >
-                        Voir l’offre
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              </article>
-            ))
-          )}
-        </section>
+        <OffersList offers={offers} />
       </div>
     </main>
   );

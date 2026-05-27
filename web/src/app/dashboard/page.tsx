@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { logoutAction } from "@/app/actions";
 import { createClient } from "@/lib/supabase/server";
@@ -77,7 +78,7 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [offersResult, runsResult] = await Promise.all([
+  const [offersResult, runsResult, applicationsCountResult] = await Promise.all([
     supabase
       .from("offers")
       .select("id,title,company,location,contract_type,decision,score_total,score_reason,offer_url,last_seen_at"),
@@ -86,30 +87,52 @@ export default async function DashboardPage() {
       .select("triggered_at,trigger_type,status,total_raw,total_relevant,total_new,total_generated_cvs")
       .order("triggered_at", { ascending: false })
       .limit(1),
+    supabase.from("applications").select("id", { count: "exact", head: true }),
   ]);
 
   const offers = sortOffers((offersResult.data ?? []) as Offer[]);
   const latestRun = ((runsResult.data?.[0] ?? null) as Run | null);
-  const hasLoadError = Boolean(offersResult.error || runsResult.error);
+  const applicationsCount = applicationsCountResult.count ?? 0;
+  const hasLoadError = Boolean(offersResult.error || runsResult.error || applicationsCountResult.error);
   const toReview = offers.filter((offer) => offer.decision === "À vérifier").length;
   const rejected = offers.filter((offer) => offer.decision === "Rejeté").length;
 
   return (
     <main className="min-h-svh bg-slate-100">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-4">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xl font-semibold text-slate-950">AutoTache</p>
             <p className="text-sm text-slate-500">Suivi de recherche</p>
           </div>
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/dashboard"
+              aria-current="page"
+              className="flex h-10 items-center rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white"
             >
-              Se déconnecter
-            </button>
-          </form>
+              Offres
+            </Link>
+            <Link
+              href="/candidatures"
+              className="flex h-10 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Candidatures
+              {applicationsCount > 0 ? (
+                <span className="ml-2 rounded-full bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-700">
+                  {applicationsCount}
+                </span>
+              ) : null}
+            </Link>
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Se déconnecter
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 

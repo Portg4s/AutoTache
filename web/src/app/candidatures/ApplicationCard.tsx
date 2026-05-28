@@ -5,10 +5,10 @@ import { CalendarDays, ChevronDown, ChevronUp, ExternalLink, FileText, Star, Sti
 import {
   saveAppliedAtAction,
   saveNotesAction,
-  toggleFavoriteAction,
   updateStatusAction,
   type ApplicationActionState,
 } from "./actions";
+import { toggleOfferFavoriteAction, type OfferFavoriteActionState } from "@/app/favorites/actions";
 import {
   applicationStatusLabels,
   applicationStatusStyles,
@@ -18,8 +18,9 @@ import {
 import { APPLICATION_STATUSES, type ApplicationWithOffer } from "@/lib/supabase/types";
 
 const initialState: ApplicationActionState = {};
+const initialFavoriteState: OfferFavoriteActionState = {};
 
-function ActionMessage({ state }: { state: ApplicationActionState }) {
+function ActionMessage({ state }: { state: ApplicationActionState | OfferFavoriteActionState }) {
   if (state.error) {
     return <p className="text-sm font-medium text-red-700">{state.error}</p>;
   }
@@ -43,7 +44,7 @@ function formatDate(value: string | null) {
 
 export function ApplicationCard({ application }: { application: ApplicationWithOffer }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [favoriteState, favoriteAction, isFavoritePending] = useActionState(toggleFavoriteAction, initialState);
+  const [favoriteState, favoriteAction, isFavoritePending] = useActionState(toggleOfferFavoriteAction, initialFavoriteState);
   const [statusState, statusAction, isStatusPending] = useActionState(updateStatusAction, initialState);
   const [notesState, notesAction, isNotesPending] = useActionState(saveNotesAction, initialState);
   const [dateState, dateAction, isDatePending] = useActionState(saveAppliedAtAction, initialState);
@@ -61,7 +62,7 @@ export function ApplicationCard({ application }: { application: ApplicationWithO
             </p>
           </div>
           <form action={favoriteAction}>
-            <input type="hidden" name="applicationId" value={application.id} />
+            <input type="hidden" name="offerId" value={application.offer_id} />
             <button
               type="submit"
               disabled={isFavoritePending}

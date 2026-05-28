@@ -47,6 +47,14 @@ export type Application = {
   updated_at: string;
 };
 
+export type OfferFavorite = {
+  owner_id: string;
+  offer_id: string;
+  created_at: string;
+};
+
+export type OfferFavoriteInsert = Pick<OfferFavorite, "owner_id" | "offer_id">;
+
 export type CandidateDocument = {
   id: string;
   offer_id: string;
@@ -54,6 +62,10 @@ export type CandidateDocument = {
   docx_storage_path: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type OfferWithFavorite = Offer & {
+  isFavorite: boolean;
 };
 
 export type ApplicationWithOffer = Application & {
@@ -86,6 +98,12 @@ export type Database = {
         Row: Application;
         Insert: never;
         Update: Partial<Pick<Application, "status" | "favorite" | "notes" | "applied_at">>;
+        Relationships: [];
+      };
+      offer_favorites: {
+        Row: OfferFavorite;
+        Insert: OfferFavoriteInsert;
+        Update: never;
         Relationships: [];
       };
       candidate_documents: {

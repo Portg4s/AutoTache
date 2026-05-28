@@ -4,7 +4,7 @@ import { ApplicationCard } from "./ApplicationCard";
 import { AppHeader } from "@/components/app/AppHeader";
 import { MobileBottomNavigation } from "@/components/app/MobileBottomNavigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Application, ApplicationWithOffer, CandidateDocument, Offer } from "@/lib/supabase/types";
+import type { Application, ApplicationWithOffer, CandidateDocument, Offer, OfferFavorite } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,7 @@ function getOffer(row: ApplicationQueryRow) {
 function mapApplicationRows(
   applications: ApplicationQueryRow[],
   documents: CandidateDocument[],
+  favoriteOfferIds: Set<string>,
 ): ApplicationWithOffer[] {
   const documentsByOfferId = new Map(documents.map((document) => [document.offer_id, document]));
 
@@ -45,7 +46,7 @@ function mapApplicationRows(
         id: application.id,
         offer_id: application.offer_id,
         status: application.status,
-        favorite: application.favorite,
+        favorite: favoriteOfferIds.has(application.offer_id),
         notes: application.notes,
         applied_at: application.applied_at,
         created_at: application.created_at,
@@ -94,23 +95,35 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
         )
       `,
     )
-    .order("favorite", { ascending: false })
     .order("updated_at", { ascending: false });
 
   const applicationRows = (applicationResult.data ?? []) as ApplicationQueryRow[];
   const offerIds = applicationRows.map((application) => application.offer_id);
-  const documentsResult =
+  const [documentsResult, favoritesResult] =
     offerIds.length > 0
-      ? await supabase
-          .from("candidate_documents")
-          .select("id,offer_id,pdf_storage_path,created_at,updated_at")
-          .in("offer_id", offerIds)
-      : { data: [], error: null };
+      ? await Promise.all([
+          supabase
+            .from("candidate_documents")
+            .select("id,offer_id,pdf_storage_path,created_at,updated_at")
+            .in("offer_id", offerIds),
+          supabase.from("offer_favorites").select("offer_id").in("offer_id", offerIds),
+        ])
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+        ];
 
-  const applications = mapApplicationRows(applicationRows, (documentsResult.data ?? []) as CandidateDocument[]);
+  const favoriteOfferIds = new Set(
+    ((favoritesResult.data ?? []) as Pick<OfferFavorite, "offer_id">[]).map((favorite) => favorite.offer_id),
+  );
+  const applications = mapApplicationRows(
+    applicationRows,
+    (documentsResult.data ?? []) as CandidateDocument[],
+    favoriteOfferIds,
+  );
   const favoriteApplications = applications.filter((application) => application.favorite);
   const otherApplications = applications.filter((application) => !application.favorite);
-  const hasLoadError = Boolean(applicationResult.error || documentsResult.error);
+  const hasLoadError = Boolean(applicationResult.error || documentsResult.error || favoritesResult.error);
   const resolvedSearchParams = await searchParams;
   const hasDocumentError = resolvedSearchParams?.document === "unavailable";
 

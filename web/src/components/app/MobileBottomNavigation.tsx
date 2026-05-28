@@ -26,7 +26,7 @@ export function MobileBottomNavigation({ active, applicationsCount = 0 }: Mobile
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 px-5 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2.5 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-2 gap-2">
         {items.map((item) => {
           const Icon = item.icon;

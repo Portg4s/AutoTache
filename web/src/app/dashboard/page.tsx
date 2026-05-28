@@ -4,7 +4,7 @@ import { OffersList } from "./OffersList";
 import { AppHeader } from "@/components/app/AppHeader";
 import { MobileBottomNavigation } from "@/components/app/MobileBottomNavigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Offer, Run } from "@/lib/supabase/types";
+import type { Offer, OfferFavorite, OfferWithFavorite, Run } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
@@ -101,7 +101,7 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [offersResult, runsResult, applicationsCountResult] = await Promise.all([
+  const [offersResult, runsResult, favoritesResult, applicationsCountResult] = await Promise.all([
     supabase
       .from("offers")
       .select("id,title,company,location,contract_type,decision,score_total,score_reason,offer_url,last_seen_at"),
@@ -110,13 +110,21 @@ export default async function DashboardPage() {
       .select("triggered_at,trigger_type,status,total_raw,total_relevant,total_new,total_generated_cvs")
       .order("triggered_at", { ascending: false })
       .limit(1),
+    supabase.from("offer_favorites").select("offer_id"),
     supabase.from("applications").select("id", { count: "exact", head: true }),
   ]);
 
   const offers = sortOffers((offersResult.data ?? []) as Offer[]);
+  const favoriteOfferIds = new Set(
+    ((favoritesResult.data ?? []) as Pick<OfferFavorite, "offer_id">[]).map((favorite) => favorite.offer_id),
+  );
+  const offersWithFavorites: OfferWithFavorite[] = offers.map((offer) => ({
+    ...offer,
+    isFavorite: favoriteOfferIds.has(offer.id),
+  }));
   const latestRun = ((runsResult.data?.[0] ?? null) as Run | null);
   const applicationsCount = applicationsCountResult.count ?? 0;
-  const hasLoadError = Boolean(offersResult.error || runsResult.error || applicationsCountResult.error);
+  const hasLoadError = Boolean(offersResult.error || runsResult.error || favoritesResult.error || applicationsCountResult.error);
   const toReview = offers.filter((offer) => offer.decision === "À vérifier").length;
   const rejected = offers.filter((offer) => offer.decision === "Rejeté").length;
 
@@ -136,7 +144,7 @@ export default async function DashboardPage() {
           </section>
         ) : null}
 
-        <OffersList offers={offers} />
+        <OffersList offers={offersWithFavorites} />
       </div>
       <MobileBottomNavigation active="offers" applicationsCount={applicationsCount} />
     </main>

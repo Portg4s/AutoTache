@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ExternalLink, SlidersHorizontal } from "lucide-react";
-import type { Offer } from "@/lib/supabase/types";
+import { useActionState, useMemo, useState } from "react";
+import { ExternalLink, SlidersHorizontal, Star } from "lucide-react";
+import { toggleOfferFavoriteAction, type OfferFavoriteActionState } from "@/app/favorites/actions";
+import type { Offer, OfferWithFavorite } from "@/lib/supabase/types";
 
-type OfferFilter = "review" | "relevant" | "all" | "rejected";
+type OfferFilter = "review" | "favorites" | "all" | "rejected";
 
 const decisionStyle: Record<Offer["decision"], string> = {
   Pertinent: "border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-200",
@@ -14,10 +15,16 @@ const decisionStyle: Record<Offer["decision"], string> = {
 
 const emptyMessages: Record<OfferFilter, string> = {
   review: "Aucune offre à vérifier pour le moment.",
-  relevant: "Aucune offre pertinente pour le moment.",
+  favorites: "Aucune offre favorite pour le moment.",
   all: "Aucune offre synchronisée.",
   rejected: "Aucune offre rejetée.",
 };
+
+const initialFavoriteState: OfferFavoriteActionState = {};
+
+function canToggleFavorite(offer: OfferWithFavorite) {
+  return offer.isFavorite || offer.decision === "À vérifier" || offer.decision === "Pertinent";
+}
 
 function formatDate(value?: string) {
   if (!value) {
@@ -30,13 +37,13 @@ function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
-function filterOffers(offers: Offer[], filter: OfferFilter) {
+function filterOffers(offers: OfferWithFavorite[], filter: OfferFilter) {
   if (filter === "review") {
     return offers.filter((offer) => offer.decision === "À vérifier");
   }
 
-  if (filter === "relevant") {
-    return offers.filter((offer) => offer.decision === "Pertinent");
+  if (filter === "favorites") {
+    return offers.filter((offer) => offer.isFavorite);
   }
 
   if (filter === "rejected") {
@@ -46,12 +53,46 @@ function filterOffers(offers: Offer[], filter: OfferFilter) {
   return offers;
 }
 
-export function OffersList({ offers }: { offers: Offer[] }) {
+function FavoriteButton({ offer }: { offer: OfferWithFavorite }) {
+  const [state, action, isPending] = useActionState(toggleOfferFavoriteAction, initialFavoriteState);
+
+  if (!canToggleFavorite(offer)) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <form action={action}>
+        <input type="hidden" name="offerId" value={offer.id} />
+        <button
+          type="submit"
+          disabled={isPending}
+          aria-label={offer.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+          aria-pressed={offer.isFavorite}
+          className={`flex h-11 min-w-11 items-center justify-center rounded-2xl border px-3 transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            offer.isFavorite
+              ? "border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
+              : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+          }`}
+          title={offer.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+        >
+          <Star aria-hidden="true" className={`h-5 w-5 ${offer.isFavorite ? "fill-amber-400" : ""}`} />
+        </button>
+      </form>
+      {state.error ? <p className="max-w-36 text-right text-xs font-medium text-red-700 dark:text-red-300">{state.error}</p> : null}
+      {state.success ? (
+        <p className="max-w-36 text-right text-xs font-medium text-teal-700 dark:text-teal-300">{state.success}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export function OffersList({ offers }: { offers: OfferWithFavorite[] }) {
   const [activeFilter, setActiveFilter] = useState<OfferFilter>("review");
   const counts = useMemo(
     () => ({
       review: offers.filter((offer) => offer.decision === "À vérifier").length,
-      relevant: offers.filter((offer) => offer.decision === "Pertinent").length,
+      favorites: offers.filter((offer) => offer.isFavorite).length,
       all: offers.length,
       rejected: offers.filter((offer) => offer.decision === "Rejeté").length,
     }),
@@ -59,7 +100,7 @@ export function OffersList({ offers }: { offers: Offer[] }) {
   );
   const visibleFilters: { key: OfferFilter; label: string; count: number }[] = [
     { key: "review", label: "À vérifier", count: counts.review },
-    ...(counts.relevant > 0 ? [{ key: "relevant" as const, label: "Pertinentes", count: counts.relevant }] : []),
+    { key: "favorites", label: "Favoris", count: counts.favorites },
     { key: "all", label: "Toutes", count: counts.all },
     { key: "rejected", label: "Rejetées", count: counts.rejected },
   ];
@@ -111,17 +152,20 @@ export function OffersList({ offers }: { offers: Offer[] }) {
           <article key={offer.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-none">
             <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">{offer.title}</h2>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{offer.company || "Entreprise non renseignée"}</p>
                 </div>
-                <span
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${
-                    decisionStyle[offer.decision]
-                  }`}
-                >
-                  {offer.decision}
-                </span>
+                <div className="flex shrink-0 items-start gap-2">
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      decisionStyle[offer.decision]
+                    }`}
+                  >
+                    {offer.decision}
+                  </span>
+                  <FavoriteButton offer={offer} />
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">

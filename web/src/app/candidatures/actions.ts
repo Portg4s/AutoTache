@@ -42,45 +42,6 @@ function refreshApplicationViews() {
   revalidatePath("/dashboard");
 }
 
-export async function toggleFavoriteAction(
-  _previousState: ApplicationActionState,
-  formData: FormData,
-): Promise<ApplicationActionState> {
-  const { applicationId, error: idError } = getApplicationId(formData);
-  if (idError) {
-    return { error: idError };
-  }
-
-  const { supabase, error: authError } = await getAuthenticatedSupabase();
-  if (!supabase) {
-    return { error: authError };
-  }
-
-  const { data, error: readError } = await supabase
-    .from("applications")
-    .select("favorite")
-    .eq("id", applicationId)
-    .single();
-
-  if (readError || !data) {
-    return { error: "Impossible de mettre à jour cette candidature." };
-  }
-
-  const { data: updatedApplication, error: updateError } = await supabase
-    .from("applications")
-    .update({ favorite: !data.favorite })
-    .eq("id", applicationId)
-    .select("id")
-    .maybeSingle();
-
-  if (updateError || !updatedApplication) {
-    return { error: "Impossible de mettre à jour cette candidature." };
-  }
-
-  refreshApplicationViews();
-  return { success: data.favorite ? "Favori retiré." : "Candidature ajoutée aux favoris." };
-}
-
 export async function updateStatusAction(
   _previousState: ApplicationActionState,
   formData: FormData,

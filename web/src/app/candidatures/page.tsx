@@ -1,7 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { logoutAction } from "@/app/actions";
+import { Star } from "lucide-react";
 import { ApplicationCard } from "./ApplicationCard";
+import { AppHeader } from "@/components/app/AppHeader";
+import { MobileBottomNavigation } from "@/components/app/MobileBottomNavigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Application, ApplicationWithOffer, CandidateDocument, Offer } from "@/lib/supabase/types";
 
@@ -54,7 +55,6 @@ function mapApplicationRows(
           ? {
               id: document.id,
               hasPdf: Boolean(document.pdf_storage_path),
-              hasDocx: Boolean(document.docx_storage_path),
             }
           : null,
       },
@@ -103,7 +103,7 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
     offerIds.length > 0
       ? await supabase
           .from("candidate_documents")
-          .select("id,offer_id,pdf_storage_path,docx_storage_path,created_at,updated_at")
+          .select("id,offer_id,pdf_storage_path,created_at,updated_at")
           .in("offer_id", offerIds)
       : { data: [], error: null };
 
@@ -115,62 +115,32 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
   const hasDocumentError = resolvedSearchParams?.document === "unavailable";
 
   return (
-    <main className="min-h-svh bg-slate-100">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xl font-semibold text-slate-950">AutoTache</p>
-            <p className="text-sm text-slate-500">Suivi des candidatures</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/dashboard"
-              className="flex h-10 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Offres
-            </Link>
-            <Link
-              href="/candidatures"
-              aria-current="page"
-              className="flex h-10 items-center rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white"
-            >
-              Candidatures
-            </Link>
-            <form action={logoutAction}>
-              <button
-                type="submit"
-                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Se déconnecter
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
+    <main className="min-h-svh">
+      <AppHeader subtitle="Suivi des candidatures" active="applications" applicationsCount={applications.length} />
 
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-28 pt-6 md:pb-8">
         <section className="flex flex-col gap-2">
-          <h1 className="text-lg font-semibold text-slate-950">Candidatures</h1>
-          <p className="text-sm leading-6 text-slate-600">
+          <h1 className="text-lg font-semibold text-slate-950 dark:text-slate-50">Candidatures</h1>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">
             {applications.length} candidature{applications.length > 1 ? "s" : ""} suivie
             {applications.length > 1 ? "s" : ""}.
           </p>
         </section>
 
         {hasDocumentError ? (
-          <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200">
             Document indisponible pour le moment.
           </section>
         ) : null}
 
         {hasLoadError ? (
-          <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
             Impossible de charger toutes les candidatures pour le moment.
           </section>
         ) : null}
 
         {applications.length === 0 ? (
-          <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+          <section className="rounded-2xl border border-slate-200/80 bg-white p-6 text-sm text-slate-600 shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-300 dark:shadow-none">
             Aucune candidature à suivre pour le moment.
           </section>
         ) : (
@@ -178,8 +148,11 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
             {favoriteApplications.length > 0 ? (
               <section className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-slate-950">★ Favoris</h2>
-                  <span className="text-sm text-slate-500">{favoriteApplications.length}</span>
+                  <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950 dark:text-slate-50">
+                    <Star aria-hidden="true" className="h-4 w-4 fill-amber-400 text-amber-500" />
+                    Favoris
+                  </h2>
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{favoriteApplications.length}</span>
                 </div>
                 <div className="flex flex-col gap-3">
                   {favoriteApplications.map((application) => (
@@ -192,8 +165,8 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
             {otherApplications.length > 0 ? (
               <section className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-slate-950">Autres candidatures</h2>
-                  <span className="text-sm text-slate-500">{otherApplications.length}</span>
+                  <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">Autres candidatures</h2>
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{otherApplications.length}</span>
                 </div>
                 <div className="flex flex-col gap-3">
                   {otherApplications.map((application) => (
@@ -205,6 +178,7 @@ export default async function CandidaturesPage({ searchParams }: CandidaturesPag
           </div>
         )}
       </div>
+      <MobileBottomNavigation active="applications" applicationsCount={applications.length} />
     </main>
   );
 }

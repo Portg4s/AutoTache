@@ -1,7 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { logoutAction } from "@/app/actions";
+import { BriefcaseBusiness, CheckCircle2, SlidersHorizontal, XCircle } from "lucide-react";
 import { OffersList } from "./OffersList";
+import { AppHeader } from "@/components/app/AppHeader";
+import { MobileBottomNavigation } from "@/components/app/MobileBottomNavigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Offer, Run } from "@/lib/supabase/types";
 
@@ -31,34 +32,61 @@ function sortOffers(offers: Offer[]) {
   });
 }
 
-function SummaryCard({ label, value }: { label: string; value: string | number }) {
+function OffersMetrics({ total, toReview, rejected }: { total: number; toReview: number; rejected: number }) {
+  const metrics = [
+    { label: "Total", value: total, icon: BriefcaseBusiness, className: "text-slate-500 dark:text-slate-400" },
+    { label: "À vérifier", value: toReview, icon: CheckCircle2, className: "text-amber-600 dark:text-amber-300" },
+    { label: "Rejetées", value: rejected, icon: XCircle, className: "text-slate-500 dark:text-slate-400" },
+  ];
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
-    </div>
+    <section className="grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-none">
+      {metrics.map((metric, index) => {
+        const Icon = metric.icon;
+
+        return (
+          <div
+            key={metric.label}
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 px-2 py-3 text-center ${
+              index > 0 ? "border-l border-slate-200/80 dark:border-slate-800" : ""
+            }`}
+          >
+            <Icon aria-hidden="true" className={`h-4 w-4 ${metric.className}`} />
+            <p className="text-2xl font-semibold leading-none tracking-tight text-slate-950 dark:text-slate-50">
+              {metric.value}
+            </p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {metric.label}
+            </p>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
 function RunSummary({ run }: { run: Run | null }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:col-span-2">
-      <p className="text-sm text-slate-500">Dernier run synchronisé</p>
-      <p className="mt-2 text-lg font-semibold text-slate-950">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-none">
+      <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+        <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+        Dernier run synchronisé
+      </div>
+      <p className="mt-2 text-base font-semibold text-slate-950 dark:text-slate-50">
         {run ? formatDate(run.triggered_at) : "Aucun run"}
       </p>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600">
-        <span className="rounded-full bg-slate-100 px-3 py-1">
+      <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+        <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">
           {run?.status === "completed" ? "Synchronisé" : run?.status ?? "Non disponible"}
         </span>
-        {run ? <span className="rounded-full bg-slate-100 px-3 py-1">{run.trigger_type}</span> : null}
-        {run ? <span className="rounded-full bg-slate-100 px-3 py-1">{run.total_raw} brutes</span> : null}
+        {run ? <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{run.trigger_type}</span> : null}
+        {run ? <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{run.total_raw} brutes</span> : null}
         {run ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1">{run.total_relevant} pertinentes</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{run.total_relevant} pertinentes</span>
         ) : null}
-        {run ? <span className="rounded-full bg-slate-100 px-3 py-1">{run.total_new} nouvelles</span> : null}
+        {run ? <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{run.total_new} nouvelles</span> : null}
         {run ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1">{run.total_generated_cvs} CV</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">{run.total_generated_cvs} CV</span>
         ) : null}
       </div>
     </div>
@@ -93,60 +121,24 @@ export default async function DashboardPage() {
   const rejected = offers.filter((offer) => offer.decision === "Rejeté").length;
 
   return (
-    <main className="min-h-svh bg-slate-100">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xl font-semibold text-slate-950">AutoTache</p>
-            <p className="text-sm text-slate-500">Suivi de recherche</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/dashboard"
-              aria-current="page"
-              className="flex h-10 items-center rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white"
-            >
-              Offres
-            </Link>
-            <Link
-              href="/candidatures"
-              className="flex h-10 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Candidatures
-              {applicationsCount > 0 ? (
-                <span className="ml-2 rounded-full bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-700">
-                  {applicationsCount}
-                </span>
-              ) : null}
-            </Link>
-            <form action={logoutAction}>
-              <button
-                type="submit"
-                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Se déconnecter
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
+    <main className="min-h-svh">
+      <AppHeader subtitle="Recherche d'emploi" active="offers" applicationsCount={applicationsCount} />
 
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <SummaryCard label="Offres totales" value={offers.length} />
-          <SummaryCard label="À vérifier" value={toReview} />
-          <SummaryCard label="Rejeté" value={rejected} />
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pb-28 pt-6 md:pb-8">
+        <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <OffersMetrics total={offers.length} toReview={toReview} rejected={rejected} />
           <RunSummary run={latestRun} />
         </section>
 
         {hasLoadError ? (
-          <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
             Impossible de charger toutes les données pour le moment.
           </section>
         ) : null}
 
         <OffersList offers={offers} />
       </div>
+      <MobileBottomNavigation active="offers" applicationsCount={applicationsCount} />
     </main>
   );
 }

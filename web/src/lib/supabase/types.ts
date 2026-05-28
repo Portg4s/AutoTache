@@ -64,7 +64,6 @@ export type ApplicationWithOffer = Application & {
   document: {
     id: string;
     hasPdf: boolean;
-    hasDocx: boolean;
   } | null;
 };
 

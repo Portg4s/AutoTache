@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,8 +27,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className="h-full antialiased">
-      <body className="min-h-full bg-slate-100 text-slate-950">{children}</body>
+    <html lang="fr" className="h-full antialiased" suppressHydrationWarning>
+      <body className="min-h-full bg-[radial-gradient(circle_at_top,_#f8fafc_0,_#eef3f8_34rem)] text-slate-950 dark:bg-[radial-gradient(circle_at_top,_#172033_0,_#020617_34rem)] dark:text-slate-100">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

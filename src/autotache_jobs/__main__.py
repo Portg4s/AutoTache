@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"- Offres normalisees uniques: {summary['total_unique_normalized']}")
     print(f"- Offres pertinentes: {summary['total_relevant']}")
     print(f"- Nouvelles offres exportees: {summary['total_new']}")
+    print(f"- Statut collecte: {summary.get('source_status', 'inconnu')}")
     _print_source_stats(summary.get("source_stats", {}))
     print(f"- Export CSV principal: {summary['export_path'] or 'aucun'}")
     print(f"- Export Excel principal: {summary['xlsx_export_path'] or 'aucun'}")
@@ -94,11 +95,15 @@ def _print_source_stats(source_stats: dict[str, dict[str, Any]]) -> None:
         return
 
     for source_name, stats in source_stats.items():
+        suffix = ""
+        if stats.get("failed"):
+            suffix = f", erreur {stats.get('error', 'inconnue')}"
         print(
             f"- {source_name} : active {'oui' if stats.get('enabled') else 'non'}, "
             f"recuperees {stats.get('fetched', 0)}, "
             f"conservees {stats.get('kept', 0)}, "
             f"filtrees {stats.get('filtered', 0)}"
+            f"{suffix}"
         )
 
 

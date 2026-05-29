@@ -14,6 +14,8 @@ DISCORD_TITLE = "\U0001F4CC AutoTache - R\u00e9sum\u00e9 recherche emploi"
 COLOR_SUCCESS = 0x2ECC71
 COLOR_REVIEW = 0xF1C40F
 COLOR_NEUTRAL = 0x5DADE2
+COLOR_DEGRADED = 0xE67E22
+COLOR_FAILED = 0xE74C3C
 DISCORD_TIMEOUT_SECONDS = 30
 
 
@@ -102,7 +104,17 @@ def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: boo
     review_count = decision_counts.get("\u00c0 v\u00e9rifier", 0)
     best_score = summary.get("best_score")
 
-    fields = [
+    fields = []
+    if summary.get("source_status") in {"degraded", "failed"}:
+        fields.append(
+            {
+                "name": "\u26a0\ufe0f Collecte",
+                "value": "\n".join(_collection_status_lines(summary)),
+                "inline": False,
+            }
+        )
+
+    fields.extend([
         {
             "name": "\U0001F4CA R\u00e9sultats",
             "value": "\n".join(
@@ -138,7 +150,7 @@ def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: boo
             "value": "\n".join(_export_lines(summary)),
             "inline": False,
         },
-    ]
+    ])
 
     status_lines = []
     if summary.get("total_relevant", 0) == 0:
@@ -159,7 +171,7 @@ def _build_discord_payload(summary: dict[str, Any], has_tracking_attachment: boo
     return {
         "embeds": [
             {
-                "title": DISCORD_TITLE,
+                "title": _discord_title(summary),
                 "description": f"Date/heure: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 "color": _embed_color(summary, review_count),
                 "fields": fields,
@@ -197,6 +209,27 @@ def _source_lines(summary: dict[str, Any]) -> list[str]:
     return lines or ["Aucune offre r\u00e9cup\u00e9r\u00e9e"]
 
 
+def _collection_status_lines(summary: dict[str, Any]) -> list[str]:
+    source_status = summary.get("source_status")
+    if source_status == "failed":
+        lines = ["Toutes les sources activees ont echoue."]
+    else:
+        lines = ["AutoTache termine en mode degrade."]
+
+    errors = summary.get("source_errors")
+    if isinstance(errors, dict) and errors:
+        lines.append("Sources indisponibles :")
+        for source_name, error in errors.items():
+            lines.append(f"- {source_name}: {error}")
+
+    successful_sources = summary.get("sources_successful")
+    if isinstance(successful_sources, list) and successful_sources:
+        lines.append("Sources traitees avec succes :")
+        lines.extend(f"- {source_name}" for source_name in successful_sources)
+
+    return lines
+
+
 def _export_lines(summary: dict[str, Any]) -> list[str]:
     lines = [
         f"\U0001F4CC Suivi: {_filename_or_none(summary.get('tracking_xlsx_export_path'))}",
@@ -211,11 +244,23 @@ def _export_lines(summary: dict[str, Any]) -> list[str]:
 
 
 def _embed_color(summary: dict[str, Any], review_count: int) -> int:
+    if summary.get("source_status") == "failed":
+        return COLOR_FAILED
+    if summary.get("source_status") == "degraded":
+        return COLOR_DEGRADED
     if summary.get("total_new", 0) > 0:
         return COLOR_SUCCESS
     if review_count > 0:
         return COLOR_REVIEW
     return COLOR_NEUTRAL
+
+
+def _discord_title(summary: dict[str, Any]) -> str:
+    if summary.get("source_status") == "failed":
+        return "\u274c AutoTache - collecte echouee"
+    if summary.get("source_status") == "degraded":
+        return "\u26a0\ufe0f AutoTache - mode degrade"
+    return DISCORD_TITLE
 
 
 def _filename_or_none(value: Any) -> str:

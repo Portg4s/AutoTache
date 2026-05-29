@@ -199,7 +199,9 @@ def _minimal_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "decision_counts",
         "best_score",
         "sources_enabled",
+        "sources_successful",
         "source_status",
+        "source_errors",
     ]
     return {key: summary[key] for key in keys if key in summary}
 

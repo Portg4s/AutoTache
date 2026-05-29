@@ -14,7 +14,7 @@ from autotache_jobs.scoring import DECISION_REJECTED, DECISION_RELEVANT, DECISIO
 
 
 class FakeFranceTravailClient:
-    def __init__(self, results_by_call: list[list[dict]]) -> None:
+    def __init__(self, results_by_call: list[list[dict] | Exception]) -> None:
         self.results_by_call = results_by_call
         self.calls: list[dict] = []
 
@@ -22,7 +22,10 @@ class FakeFranceTravailClient:
         self.calls.append(kwargs)
         if not self.results_by_call:
             return []
-        return self.results_by_call.pop(0)
+        result = self.results_by_call.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 def _config(**overrides) -> AppConfig:
@@ -147,6 +150,13 @@ def _jooble_offer(offer_id: str = "jooble-front") -> dict:
 def _arbeitnow_client(raw_offers: list[dict]) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": raw_offers, "links": {"next": None}, "meta": {}})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _arbeitnow_failing_client(message: str) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text=message)
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -784,6 +794,179 @@ def test_runner_merges_france_travail_and_arbeitnow_sources(tmp_path: Path) -> N
         "filtered": 0,
     }
     assert {offer["source"] for offer in summary["debug_offers"]} == {"France Travail", "Arbeitnow"}
+
+
+def test_runner_all_sources_success_reports_success_status(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([[_wordpress_offer("FT1")]])
+    calls = []
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+            },
+            notifications={"discord_enabled": True},
+        ),
+        _env(discord_webhook_url="https://discord.test/webhook"),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        discord_sender=lambda webhook_url, payload: calls.append(payload.copy())
+        or {"sent": True, "status": "sent", "error": None},
+    )
+
+    assert summary["source_status"] == "success"
+    assert summary["sources_successful"] == ["France Travail", "Arbeitnow"]
+    assert summary["source_errors"] == {}
+    assert "source_errors" not in calls[0] or calls[0]["source_errors"] == {}
+
+
+def test_runner_continues_when_one_source_fails_and_notifies_degraded(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([RuntimeError("Erreur HTTP 401 pendant recherche: Bearer secret-token")])
+    calls = []
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+            },
+            notifications={"discord_enabled": True, "notify_when_no_results": False},
+        ),
+        _env(discord_webhook_url="https://discord.test/webhook"),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+        discord_sender=lambda webhook_url, payload: calls.append(payload.copy())
+        or {"sent": True, "status": "sent", "error": None},
+    )
+
+    assert summary["source_status"] == "degraded"
+    assert summary["sources_successful"] == ["Arbeitnow"]
+    assert summary["source_counts"] == {"Arbeitnow": {"raw": 1, "normalized": 1}}
+    assert summary["source_stats"]["France Travail"]["failed"] is True
+    assert summary["source_stats"]["France Travail"]["fetched"] == 0
+    assert summary["source_errors"]["France Travail"] == "Erreur HTTP 401 pendant recherche: Bearer [redacted]"
+    assert summary["total_raw"] == 1
+    assert summary["total_new"] == 1
+    assert Path(summary["seen_ids_path"]).exists()
+    assert calls[0]["source_status"] == "degraded"
+    assert calls[0]["source_errors"] == {"France Travail": "Erreur HTTP 401 pendant recherche: Bearer [redacted]"}
+    assert "secret-token" not in str(calls[0])
+
+
+def test_runner_degraded_run_propagates_unexpected_discord_error(tmp_path: Path) -> None:
+    client = FakeFranceTravailClient([RuntimeError("Erreur HTTP 401 pendant recherche France Travail")])
+
+    def fail_discord(webhook_url: str, payload: dict) -> dict:
+        raise RuntimeError("discord unavailable")
+
+    with pytest.raises(RuntimeError, match="discord unavailable"):
+        run_job_search(
+            _config(
+                sources={
+                    "france_travail": {"enabled": True},
+                    "arbeitnow": {"enabled": True, "max_pages": 1},
+                },
+                notifications={"discord_enabled": True, "notify_when_no_results": False},
+            ),
+            _env(discord_webhook_url="https://discord.test/webhook"),
+            client=client,
+            arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+            discord_sender=fail_discord,
+        )
+
+
+def test_runner_degraded_run_preserves_existing_seen_ids_and_adds_successful_offer(tmp_path: Path) -> None:
+    seen_path = tmp_path / "data" / "seen_offer_ids.json"
+    seen_path.parent.mkdir(parents=True)
+    seen_path.write_text(json.dumps(["OLD"]), encoding="utf-8")
+    client = FakeFranceTravailClient([RuntimeError("Erreur HTTP 401 pendant recherche France Travail")])
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+            },
+            notifications={"discord_enabled": False},
+        ),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["source_status"] == "degraded"
+    assert json.loads(seen_path.read_text(encoding="utf-8")) == ["AN1", "OLD"]
+
+
+def test_runner_all_sources_fail_notifies_then_raises_without_persisting_empty_state(tmp_path: Path) -> None:
+    seen_path = tmp_path / "data" / "seen_offer_ids.json"
+    seen_path.parent.mkdir(parents=True)
+    seen_path.write_text(json.dumps(["OLD"]), encoding="utf-8")
+    client = FakeFranceTravailClient([RuntimeError("Erreur HTTP 401 pendant recherche France Travail: aucun detail")])
+    calls = []
+
+    with pytest.raises(runner_module.SourceCollectionFailedError) as exc_info:
+        run_job_search(
+            _config(
+                sources={
+                    "france_travail": {"enabled": True},
+                    "arbeitnow": {"enabled": True, "max_pages": 1},
+                },
+                notifications={"discord_enabled": True, "notify_when_no_results": False},
+            ),
+            _env(discord_webhook_url="https://discord.test/webhook"),
+            client=client,
+            arbeitnow_client=_arbeitnow_failing_client("Arbeitnow down"),
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+            discord_sender=lambda webhook_url, payload: calls.append(payload.copy())
+            or {"sent": True, "status": "sent", "error": None},
+        )
+
+    assert "Toutes les sources activees ont echoue" in str(exc_info.value)
+    assert calls[0]["source_status"] == "failed"
+    assert calls[0]["sources_successful"] == []
+    assert set(calls[0]["source_errors"]) == {"France Travail", "Arbeitnow"}
+    assert json.loads(seen_path.read_text(encoding="utf-8")) == ["OLD"]
+    assert not (tmp_path / "exports" / "offres").exists()
+
+
+def test_runner_all_sources_fail_keeps_collection_error_when_discord_raises(tmp_path: Path, caplog) -> None:
+    client = FakeFranceTravailClient([RuntimeError("Erreur HTTP 401 pendant recherche France Travail")])
+
+    def fail_discord(webhook_url: str, payload: dict) -> dict:
+        raise RuntimeError("discord unavailable")
+
+    with caplog.at_level("ERROR"), pytest.raises(runner_module.SourceCollectionFailedError) as exc_info:
+        run_job_search(
+            _config(
+                sources={
+                    "france_travail": {"enabled": True},
+                    "arbeitnow": {"enabled": True, "max_pages": 1},
+                },
+                notifications={"discord_enabled": True, "notify_when_no_results": False},
+            ),
+            _env(discord_webhook_url="https://discord.test/webhook"),
+            client=client,
+            arbeitnow_client=_arbeitnow_failing_client("Arbeitnow down"),
+            data_dir=tmp_path / "data",
+            export_dir=tmp_path / "exports",
+            discord_sender=fail_discord,
+        )
+
+    assert "Toutes les sources activees ont echoue" in str(exc_info.value)
+    assert "discord unavailable" not in str(exc_info.value)
+    assert "Envoi Discord echoue apres echec total de collecte" in caplog.text
+    assert "discord unavailable" in caplog.text
 
 
 def test_runner_can_use_remotive_when_other_sources_disabled(tmp_path: Path) -> None:

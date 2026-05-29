@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Callable
 
 from autotache_jobs.cv.docx_generator import generate_cv_docx
 from autotache_jobs.cv.pdf_generator import generate_cv_pdf
@@ -32,6 +34,26 @@ from .supabase.settings import SupabaseSettingsError, load_supabase_settings_fro
 from .supabase.synchronizer import SupabaseSyncResult, sync_run_to_supabase
 
 
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SourceFailure:
+    """Failure captured while collecting one enabled source."""
+
+    source_name: str
+    error: str
+
+
+class SourceCollectionFailedError(RuntimeError):
+    """Raised when every enabled source failed during collection."""
+
+    def __init__(self, failures: list[SourceFailure]) -> None:
+        self.failures = failures
+        details = "; ".join(f"{failure.source_name}: {failure.error}" for failure in failures)
+        super().__init__(f"Toutes les sources activees ont echoue: {details or 'aucun detail'}")
+
+
 def run_job_search(
     config: Any,
     env_settings: Any,
@@ -50,7 +72,7 @@ def run_job_search(
 ) -> dict[str, Any]:
     """Run the full local job search pipeline and return a summary."""
 
-    source_results = _collect_source_results(
+    source_results, source_failures = _collect_source_results(
         config,
         env_settings,
         france_travail_client=client,
@@ -62,6 +84,15 @@ def run_job_search(
         jsearch_client=jsearch_client,
         sleep_func=sleep_func,
     )
+    collection_status = _collection_status(_enabled_source_names(config), source_results, source_failures)
+    if collection_status == "failed":
+        summary = _failed_collection_summary(config, source_failures, data_dir)
+        try:
+            _notify_discord_if_needed(config, env_settings, summary, discord_sender)
+        except Exception:
+            logger.exception("Envoi Discord echoue apres echec total de collecte")
+        raise SourceCollectionFailedError(source_failures)
+
     raw_offers = [offer for result in source_results for offer in result.raw_offers]
     normalized_offers = [offer for result in source_results for offer in result.normalized_offers]
     normalized_offers = [_with_score(offer) for offer in normalized_offers]
@@ -111,8 +142,10 @@ def run_job_search(
         "best_score": _best_score(unique_normalized_offers),
         "sources_enabled": _enabled_source_names(config),
         "source_counts": _source_counts(source_results),
-        "source_stats": _source_stats(config, source_results),
-        "source_status": "collected" if source_results else "no_sources_enabled",
+        "source_stats": _source_stats(config, source_results, source_failures),
+        "source_status": collection_status,
+        "sources_successful": [result.source_name for result in source_results],
+        "source_errors": _source_errors(source_failures),
         "discord_enabled": bool(config.notifications.discord_enabled),
         "discord_sent": False,
         "discord_status": "disabled",
@@ -151,80 +184,92 @@ def _collect_source_results(
     themuse_client: Any | None = None,
     jsearch_client: Any | None = None,
     sleep_func: Any = time.sleep,
-) -> list[SourceResult]:
+) -> tuple[list[SourceResult], list[SourceFailure]]:
     source_results: list[SourceResult] = []
+    source_failures: list[SourceFailure] = []
+
+    def collect_source(source_name: str, collect: Callable[[], SourceResult]) -> None:
+        try:
+            source_results.append(collect())
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            logger.exception("Collecte source echouee pour %s", source_name)
+            source_failures.append(SourceFailure(source_name=source_name, error=_safe_source_error(exc)))
 
     if config.sources.france_travail.enabled:
-        active_client = france_travail_client or FranceTravailClient(
-            client_id=env_settings.client_id,
-            client_secret=env_settings.client_secret,
-            scope=env_settings.scope,
-            token_url=env_settings.token_url,
-            api_base_url=env_settings.api_base_url,
-            max_retries=config.api.max_retries,
+        collect_source(
+            "France Travail",
+            lambda: FranceTravailSource(
+                config,
+                france_travail_client or FranceTravailClient(
+                    client_id=env_settings.client_id,
+                    client_secret=env_settings.client_secret,
+                    scope=env_settings.scope,
+                    token_url=env_settings.token_url,
+                    api_base_url=env_settings.api_base_url,
+                    max_retries=config.api.max_retries,
+                ),
+                sleep_func=sleep_func,
+            ).collect(),
         )
-        source_results.append(FranceTravailSource(config, active_client, sleep_func=sleep_func).collect())
 
     if config.sources.arbeitnow.enabled:
-        source_results.append(
-            ArbeitnowSource(
+        collect_source(
+            "Arbeitnow",
+            lambda: ArbeitnowSource(
                 max_pages=config.sources.arbeitnow.max_pages,
                 keywords=config.sources.arbeitnow.keywords,
                 allowed_locations=config.sources.arbeitnow.allowed_locations,
                 http_client=arbeitnow_client,
-            ).collect()
+            ).collect(),
         )
 
     if config.sources.remotive.enabled:
-        source_results.append(
-            RemotiveSource(
+        collect_source(
+            "Remotive",
+            lambda: RemotiveSource(
                 keywords=config.sources.remotive.keywords,
                 http_client=remotive_client,
-            ).collect()
+            ).collect(),
         )
 
     if config.sources.adzuna.enabled:
-        app_id, app_key = _adzuna_credentials(env_settings)
-        source_results.append(
-            AdzunaSource(
-                app_id=app_id,
-                app_key=app_key,
-                country=config.sources.adzuna.country,
-                max_pages=config.sources.adzuna.max_pages,
-                results_per_page=config.sources.adzuna.results_per_page,
-                keywords=config.sources.adzuna.keywords,
-                location=config.sources.adzuna.location,
-                http_client=adzuna_client,
-            ).collect()
+        collect_source(
+            "Adzuna",
+            lambda: _collect_adzuna(config, env_settings, adzuna_client),
         )
 
     if config.sources.jooble.enabled:
-        source_results.append(
-            JoobleSource(
+        collect_source(
+            "Jooble",
+            lambda: JoobleSource(
                 api_key=_jooble_api_key(env_settings),
                 base_url=config.sources.jooble.base_url,
                 max_pages=config.sources.jooble.max_pages,
                 keywords=config.sources.jooble.keywords,
                 location=config.sources.jooble.location,
                 http_client=jooble_client,
-            ).collect()
+            ).collect(),
         )
 
     if config.sources.themuse.enabled:
-        source_results.append(
-            TheMuseSource(
+        collect_source(
+            "The Muse",
+            lambda: TheMuseSource(
                 base_url=config.sources.themuse.base_url,
                 max_pages=config.sources.themuse.max_pages,
                 page_size=config.sources.themuse.page_size,
                 keywords=config.sources.themuse.keywords,
                 location=config.sources.themuse.location,
                 http_client=themuse_client,
-            ).collect()
+            ).collect(),
         )
 
     if config.sources.jsearch.enabled:
-        source_results.append(
-            JSearchSource(
+        collect_source(
+            "JSearch",
+            lambda: JSearchSource(
                 api_key=_jsearch_api_key(env_settings),
                 base_url=config.sources.jsearch.base_url,
                 host=config.sources.jsearch.host,
@@ -239,10 +284,10 @@ def _collect_source_results(
                 employment_types=config.sources.jsearch.employment_types,
                 fields=config.sources.jsearch.fields,
                 http_client=jsearch_client,
-            ).collect()
+            ).collect(),
         )
 
-    return source_results
+    return source_results, source_failures
 
 
 def _deduplicate_by_id(offers: list[dict]) -> list[dict]:
@@ -408,7 +453,11 @@ def _source_counts(source_results: list[SourceResult]) -> dict[str, dict[str, in
     }
 
 
-def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, dict[str, int | bool]]:
+def _source_stats(
+    config: Any,
+    source_results: list[SourceResult],
+    source_failures: list[SourceFailure] | None = None,
+) -> dict[str, dict[str, int | bool | str]]:
     stats = {
         "France Travail": _stats_dict(SourceStats(enabled=bool(config.sources.france_travail.enabled), fetched=0, kept=0, filtered=0)),
         "Arbeitnow": _stats_dict(SourceStats(enabled=bool(config.sources.arbeitnow.enabled), fetched=0, kept=0, filtered=0)),
@@ -420,7 +469,98 @@ def _source_stats(config: Any, source_results: list[SourceResult]) -> dict[str, 
     }
     for result in source_results:
         stats[result.source_name] = _stats_dict(result.stats)
+    for failure in source_failures or []:
+        failed_stats = stats.get(failure.source_name, {"enabled": True, "fetched": 0, "kept": 0, "filtered": 0})
+        stats[failure.source_name] = {
+            **failed_stats,
+            "failed": True,
+            "error": failure.error,
+        }
     return stats
+
+
+def _collect_adzuna(config: Any, env_settings: Any, adzuna_client: Any | None) -> SourceResult:
+    app_id, app_key = _adzuna_credentials(env_settings)
+    return AdzunaSource(
+        app_id=app_id,
+        app_key=app_key,
+        country=config.sources.adzuna.country,
+        max_pages=config.sources.adzuna.max_pages,
+        results_per_page=config.sources.adzuna.results_per_page,
+        keywords=config.sources.adzuna.keywords,
+        location=config.sources.adzuna.location,
+        http_client=adzuna_client,
+    ).collect()
+
+
+def _collection_status(
+    enabled_sources: list[str],
+    source_results: list[SourceResult],
+    source_failures: list[SourceFailure],
+) -> str:
+    if not enabled_sources:
+        return "no_sources_enabled"
+    if source_failures and not source_results:
+        return "failed"
+    if source_failures:
+        return "degraded"
+    return "success"
+
+
+def _source_errors(source_failures: list[SourceFailure]) -> dict[str, str]:
+    return {failure.source_name: failure.error for failure in source_failures}
+
+
+def _safe_source_error(exc: Exception) -> str:
+    message = str(exc).strip() or type(exc).__name__
+    message = " ".join(message.replace("\r", " ").replace("\n", " ").split())
+    message = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", message)
+    message = re.sub(r"(?i)(client_secret|api[_-]?key|token|authorization|password)=([^&\s]+)", r"\1=[redacted]", message)
+    message = re.sub(r"(?i)(client_secret|api[_-]?key|token|authorization|password)\s*:\s*\S+", r"\1: [redacted]", message)
+    return message[:300]
+
+
+def _failed_collection_summary(config: Any, source_failures: list[SourceFailure], data_dir: str | Path) -> dict[str, Any]:
+    seen_ids_path = Path(data_dir) / "seen_offer_ids.json"
+    return {
+        "total_raw": 0,
+        "total_normalized": 0,
+        "total_unique_normalized": 0,
+        "total_relevant": 0,
+        "total_exportable": 0,
+        "total_new": 0,
+        "export_path": None,
+        "xlsx_export_path": None,
+        "tracking_xlsx_export_path": None,
+        "generated_cvs": [],
+        "candidate_pack_paths": [],
+        "generated_pdfs": [],
+        "total_generated_cvs": 0,
+        "debug_export_path": None,
+        "debug_xlsx_export_path": None,
+        "seen_ids_path": str(seen_ids_path),
+        "decision_counts": _count_decisions([]),
+        "total_decision_pertinent": 0,
+        "total_decision_a_verifier": 0,
+        "total_decision_rejete": 0,
+        "best_score": None,
+        "sources_enabled": _enabled_source_names(config),
+        "sources_successful": [],
+        "source_counts": {},
+        "source_stats": _source_stats(config, [], source_failures),
+        "source_status": "failed",
+        "source_errors": _source_errors(source_failures),
+        "discord_enabled": bool(config.notifications.discord_enabled),
+        "discord_sent": False,
+        "discord_status": "disabled",
+        "discord_error": None,
+        "supabase_sync_enabled": bool(config.supabase.enabled),
+        "supabase_sync_success": False,
+        "supabase_offers_synced_count": 0,
+        "supabase_applications_synced_count": 0,
+        "supabase_documents_synced_count": 0,
+        "supabase_sync_error": None,
+    }
 
 
 def _adzuna_credentials(env_settings: Any) -> tuple[str, str]:
@@ -469,7 +609,11 @@ def _notify_discord_if_needed(config: Any, env_settings: Any, summary: dict[str,
         return
 
     summary["discord_status"] = "skipped_no_relevant_offers"
-    should_notify = summary["total_new"] > 0 or config.notifications.notify_when_no_results
+    should_notify = (
+        summary["total_new"] > 0
+        or config.notifications.notify_when_no_results
+        or summary.get("source_status") in {"degraded", "failed"}
+    )
     if not should_notify:
         return
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import httpx
 
-from autotache_jobs.notifications import COLOR_REVIEW, COLOR_SUCCESS, send_discord_summary
+from autotache_jobs.notifications import COLOR_DEGRADED, COLOR_FAILED, COLOR_REVIEW, COLOR_SUCCESS, send_discord_summary
 
 
 class FakeDiscordResponse:
@@ -227,6 +227,61 @@ def test_discord_summary_shows_empty_sources_message_when_none_fetched() -> None
     assert sources_field["value"] == "Aucune offre r\u00e9cup\u00e9r\u00e9e"
     assert "Adzuna :" not in sources_field["value"]
     assert "Jooble :" not in sources_field["value"]
+
+
+def test_discord_summary_shows_degraded_source_errors() -> None:
+    payload = _send_and_capture(
+        {
+            "source_status": "degraded",
+            "sources_successful": ["Adzuna", "Jooble"],
+            "source_errors": {"France Travail": "Erreur HTTP 401 pendant recherche d'offres France Travail"},
+            "total_raw": 2,
+            "total_relevant": 1,
+            "total_new": 1,
+            "decision_counts": {"Pertinent": 1, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 1},
+            "source_stats": {
+                "France Travail": {"enabled": True, "fetched": 0, "kept": 0, "filtered": 0, "failed": True},
+                "Adzuna": {"enabled": True, "fetched": 1, "kept": 1, "filtered": 0},
+                "Jooble": {"enabled": True, "fetched": 1, "kept": 1, "filtered": 0},
+            },
+        }
+    )
+
+    embed = payload["embeds"][0]
+    payload_text = str(payload)
+
+    assert embed["title"] == "\u26a0\ufe0f AutoTache - mode degrade"
+    assert embed["color"] == COLOR_DEGRADED
+    assert "Sources indisponibles" in payload_text
+    assert "France Travail: Erreur HTTP 401 pendant recherche d'offres France Travail" in payload_text
+    assert "Sources traitees avec succes" in payload_text
+    assert "Adzuna" in payload_text
+
+
+def test_discord_summary_shows_failed_collection_errors() -> None:
+    payload = _send_and_capture(
+        {
+            "source_status": "failed",
+            "sources_successful": [],
+            "source_errors": {
+                "France Travail": "Erreur HTTP 401 pendant recherche",
+                "Arbeitnow": "Erreur HTTP 503 pendant collecte",
+            },
+            "total_raw": 0,
+            "total_relevant": 0,
+            "total_new": 0,
+            "decision_counts": {"Pertinent": 0, "\u00c0 v\u00e9rifier": 0, "Rejet\u00e9": 0},
+        }
+    )
+
+    embed = payload["embeds"][0]
+    payload_text = str(payload)
+
+    assert embed["title"] == "\u274c AutoTache - collecte echouee"
+    assert embed["color"] == COLOR_FAILED
+    assert "Toutes les sources activees ont echoue." in payload_text
+    assert "France Travail: Erreur HTTP 401 pendant recherche" in payload_text
+    assert "Arbeitnow: Erreur HTTP 503 pendant collecte" in payload_text
 
 
 def test_discord_payload_contains_embed_with_color() -> None:

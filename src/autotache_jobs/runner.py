@@ -110,7 +110,9 @@ def run_job_search(
     export_path = export_offers_to_csv(new_offers, main_export_dir)
     xlsx_export_path = export_offers_to_xlsx(new_offers, main_export_dir) if export_path else None
     tracking_xlsx_export_path = export_offers_to_tracking_xlsx(new_offers, main_export_dir)
-    generated_cvs, generated_pdfs = _generate_cv_documents_if_needed(config, new_offers, export_dir)
+    # CV generation is now reserved for an explicit user action, not daily collection.
+    generated_cvs: list[Path] = []
+    generated_pdfs: list[Path] = []
     debug_export_path = _export_debug_offers(unique_normalized_offers, debug_export_dir) if include_debug_offers else None
     debug_xlsx_export_path = (
         _export_debug_offers_to_xlsx(unique_normalized_offers, debug_export_dir)

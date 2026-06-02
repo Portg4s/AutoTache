@@ -419,7 +419,7 @@ def test_runner_can_include_debug_offers(tmp_path: Path) -> None:
     assert summary["debug_offers"][0]["id_offre"] == "DATA"
     assert summary["debug_offers"][0]["is_relevant"] is False
     assert "Offre rejetee" in summary["debug_offers"][0]["relevance_reason"]
-    assert summary["debug_offers"][0]["decision"] == "Rejeté"
+    assert summary["debug_offers"][0]["decision"] == DECISION_REJECTED
     assert isinstance(summary["debug_offers"][0]["score_total"], int)
     assert summary["debug_offers"][0]["score_reason"]
 
@@ -546,8 +546,8 @@ def test_runner_returns_decision_counts_for_unique_debug_offers(tmp_path: Path) 
     )
 
     assert summary["decision_counts"]["Pertinent"] == 1
-    assert summary["decision_counts"]["À vérifier"] == 0
-    assert summary["decision_counts"]["Rejeté"] == 1
+    assert summary["decision_counts"][DECISION_REVIEW] == 0
+    assert summary["decision_counts"][DECISION_REJECTED] == 1
 
 
 def test_runner_scoring_does_not_change_existing_relevance_logic(tmp_path: Path) -> None:
@@ -565,7 +565,7 @@ def test_runner_scoring_does_not_change_existing_relevance_logic(tmp_path: Path)
     )
 
     assert summary["debug_offers"][0]["is_relevant"] is False
-    assert summary["debug_offers"][0]["decision"] == "Rejeté"
+    assert summary["debug_offers"][0]["decision"] == DECISION_REJECTED
     assert summary["total_relevant"] == 0
     assert summary["total_new"] == 0
     assert summary["export_path"] is None
@@ -905,6 +905,37 @@ def test_runner_degraded_run_preserves_existing_seen_ids_and_adds_successful_off
 
     assert summary["source_status"] == "degraded"
     assert json.loads(seen_path.read_text(encoding="utf-8")) == ["AN1", "OLD"]
+
+
+def test_runner_degraded_run_does_not_auto_generate_cv_documents(tmp_path: Path, monkeypatch) -> None:
+    client = FakeFranceTravailClient([RuntimeError("Erreur HTTP 401 pendant recherche France Travail")])
+    calls = []
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: calls.append(("profile", path)) or object())
+    monkeypatch.setattr(runner_module, "generate_cv_docx", lambda **kwargs: calls.append(("docx", kwargs)))
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", lambda **kwargs: calls.append(("pdf", kwargs)))
+
+    summary = run_job_search(
+        _config(
+            sources={
+                "france_travail": {"enabled": True},
+                "arbeitnow": {"enabled": True, "max_pages": 1},
+            },
+            cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")},
+            notifications={"discord_enabled": False},
+        ),
+        _env(),
+        client=client,
+        arbeitnow_client=_arbeitnow_client([_arbeitnow_offer("AN1")]),
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
+
+    assert summary["source_status"] == "degraded"
+    assert summary["total_new"] == 1
+    assert summary["total_generated_cvs"] == 0
+    assert summary["generated_cvs"] == []
+    assert summary["generated_pdfs"] == []
+    assert calls == []
 
 
 def test_runner_all_sources_fail_notifies_then_raises_without_persisting_empty_state(tmp_path: Path) -> None:
@@ -1448,7 +1479,7 @@ def test_runner_handles_no_enabled_source_without_crashing(tmp_path: Path) -> No
 
 def test_runner_main_export_excludes_rejected_decision_even_when_relevant(tmp_path: Path, monkeypatch) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
-    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": "Rejeté"}))
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": DECISION_REJECTED}))
 
     summary = run_job_search(
         _config(),
@@ -1481,7 +1512,7 @@ def test_runner_main_export_includes_review_and_relevant_decisions(tmp_path: Pat
             {
                 "PERTINENT": DECISION_RELEVANT,
                 "REVIEW": DECISION_REVIEW,
-                "REJECTED": "Rejeté",
+                "REJECTED": DECISION_REJECTED,
             }
         ),
     )
@@ -1508,7 +1539,7 @@ def test_runner_main_export_includes_review_and_relevant_decisions(tmp_path: Pat
     assert json.loads(Path(summary["seen_ids_path"]).read_text(encoding="utf-8")) == ["PERTINENT", "REVIEW"]
 
 
-def test_runner_generates_recruiter_docx_and_pdf_for_each_new_exportable_offer(tmp_path: Path, monkeypatch) -> None:
+def test_runner_does_not_auto_generate_recruiter_docx_or_pdf_for_new_exportable_offers(tmp_path: Path, monkeypatch) -> None:
     first_offer = _wordpress_offer("ID 1/é")
     first_offer["entreprise"] = {"nom": "Agence Test"}
     first_offer["intitule"] = "Integrateur front React"
@@ -1554,40 +1585,15 @@ def test_runner_generates_recruiter_docx_and_pdf_for_each_new_exportable_offer(t
         export_dir=tmp_path / "exports",
     )
 
-    assert loaded_profiles == [str(tmp_path / "profile.yaml")]
+    assert loaded_profiles == []
     assert summary["total_new"] == 2
-    assert summary["total_generated_cvs"] == 2
-    assert [Path(path).name for path in summary["generated_cvs"]] == ["CV_id_1_e.docx", "CV_id_2.docx"]
-    assert [Path(path).name for path in summary["generated_pdfs"]] == ["CV_id_1_e.pdf", "CV_id_2.pdf"]
-    assert [Path(path).name for path in summary["candidate_pack_paths"]] == [
-        "id_1_e_agence_test_integrateur_front_react",
-        "id_2_agence_test_integrateur_front_react",
-    ]
-    assert len(generated_docx_calls) == 2
-    assert len(generated_pdf_calls) == 2
-    assert [call[3] for call in generated_docx_calls] == ["recruiter", "recruiter"]
-    assert generated_docx_calls[0][2].name == "id_1_e_agence_test_integrateur_front_react"
-    assert generated_docx_calls[1][2].name == "id_2_agence_test_integrateur_front_react"
-    assert generated_pdf_calls[0][2] == generated_docx_calls[0][2]
-    assert generated_pdf_calls[1][2] == generated_docx_calls[1][2]
-
-    metadata_path = generated_docx_calls[0][2] / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata == {
-        "offer_id": "ID 1/é",
-        "title": "Integrateur front React",
-        "company": "Agence Test",
-        "location": "Dijon 21000",
-        "contract_type": "CDI",
-        "source": "France Travail",
-        "decision": DECISION_RELEVANT,
-        "score_total": 90,
-        "offer_url": "https://candidat.francetravail.fr/offres/recherche/detail/ID 1/é",
-        "generated_docx": "CV_id_1_e.docx",
-        "generated_pdf": "CV_id_1_e.pdf",
-    }
-    assert str(tmp_path / "profile.yaml") not in metadata_path.read_text(encoding="utf-8")
-
+    assert summary["total_generated_cvs"] == 0
+    assert summary["generated_cvs"] == []
+    assert summary["generated_pdfs"] == []
+    assert summary["candidate_pack_paths"] == []
+    assert generated_docx_calls == []
+    assert generated_pdf_calls == []
+    assert not (tmp_path / "exports" / "candidatures").exists()
 
 def test_runner_does_not_load_profile_when_cv_generation_is_disabled(tmp_path: Path, monkeypatch) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
@@ -1637,7 +1643,7 @@ def test_runner_does_not_generate_cv_for_seen_or_rejected_offers(tmp_path: Path,
     assert calls == []
 
 
-def test_runner_does_not_save_seen_ids_when_cv_generation_fails(tmp_path: Path, monkeypatch) -> None:
+def test_runner_ignores_automatic_docx_generation_even_if_generator_would_fail(tmp_path: Path, monkeypatch) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
 
     def fail_generate_cv_docx(**kwargs):
@@ -1646,19 +1652,20 @@ def test_runner_does_not_save_seen_ids_when_cv_generation_fails(tmp_path: Path, 
     monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
     monkeypatch.setattr(runner_module, "generate_cv_docx", fail_generate_cv_docx)
 
-    with pytest.raises(RuntimeError, match="generation failed"):
-        run_job_search(
-            _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
-            _env(),
-            client=client,
-            data_dir=tmp_path / "data",
-            export_dir=tmp_path / "exports",
-        )
+    summary = run_job_search(
+        _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
 
-    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
+    assert summary["total_new"] == 1
+    assert summary["total_generated_cvs"] == 0
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
 
 
-def test_runner_does_not_save_seen_ids_when_pdf_generation_fails(tmp_path: Path, monkeypatch) -> None:
+def test_runner_ignores_automatic_pdf_generation_even_if_generator_would_fail(tmp_path: Path, monkeypatch) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
 
     def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
@@ -1674,22 +1681,23 @@ def test_runner_does_not_save_seen_ids_when_pdf_generation_fails(tmp_path: Path,
     monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
     monkeypatch.setattr(runner_module, "generate_cv_pdf", fail_generate_cv_pdf)
 
-    with pytest.raises(RuntimeError, match="pdf generation failed"):
-        run_job_search(
-            _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
-            _env(),
-            client=client,
-            data_dir=tmp_path / "data",
-            export_dir=tmp_path / "exports",
-        )
+    summary = run_job_search(
+        _config(cv_generation={"enabled": True, "profile_path": str(tmp_path / "profile.yaml")}),
+        _env(),
+        client=client,
+        data_dir=tmp_path / "data",
+        export_dir=tmp_path / "exports",
+    )
 
-    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
+    assert summary["total_new"] == 1
+    assert summary["total_generated_cvs"] == 0
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
 
 
 def test_runner_discord_summary_uses_really_exported_offer_count(tmp_path: Path, monkeypatch) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
     calls = []
-    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": "Rejeté"}))
+    monkeypatch.setattr(runner_module, "score_offer", _fake_scoring({"A1": DECISION_REJECTED}))
 
     summary = run_job_search(
         _config(notifications={"discord_enabled": True, "notify_when_no_results": True}),
@@ -1766,9 +1774,14 @@ def test_runner_successful_supabase_sync_receives_scored_offers(tmp_path: Path, 
     assert all({"decision", "score_total", "score_reason", "score_details"} <= offer.keys() for offer in scored_offers)
     assert rejected_offer["decision"] == DECISION_REJECTED
     assert [offer["id_offre"] for offer in sync_calls[0]["new_offers"]] == ["A1"]
+    assert sync_calls[0]["generated_docx_paths"] == []
+    assert sync_calls[0]["generated_pdf_paths"] == []
+    assert sync_calls[0]["candidate_pack_paths"] == []
     assert summary["supabase_sync_enabled"] is True
     assert summary["supabase_sync_success"] is True
     assert summary["supabase_offers_synced_count"] == 2
+    assert summary["supabase_applications_synced_count"] == 0
+    assert summary["supabase_documents_synced_count"] == 0
     assert summary["supabase_sync_error"] is None
     assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
 
@@ -1820,37 +1833,27 @@ def test_runner_fail_run_on_supabase_error_raises_clean_error(tmp_path: Path, mo
     assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
 
 
-def test_runner_successful_supabase_sync_persists_seen_offer_with_candidate_pack(tmp_path: Path, monkeypatch) -> None:
+def test_runner_successful_supabase_sync_persists_seen_offer_without_auto_candidate_pack(tmp_path: Path, monkeypatch) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
+    sync_calls = []
     monkeypatch.setattr(runner_module, "load_supabase_settings_from_env", lambda: object())
     monkeypatch.setattr(runner_module, "create_supabase_client", lambda settings: object())
-    monkeypatch.setattr(
-        runner_module,
-        "sync_run_to_supabase",
-        lambda **kwargs: runner_module.SupabaseSyncResult(
+
+    def fake_sync_run_to_supabase(**kwargs):
+        sync_calls.append(kwargs)
+        return runner_module.SupabaseSyncResult(
             enabled=True,
             success=True,
             run_synced=True,
-            offers_synced_count=1,
-            applications_synced_count=1,
-            documents_synced_count=1,
-        ),
-    )
-    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
+            offers_synced_count=len(kwargs["scored_offers"]),
+            applications_synced_count=0,
+            documents_synced_count=0,
+        )
 
-    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
-        output_path = Path(output_dir) / "cv.docx"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text("docx", encoding="utf-8")
-        return output_path
-
-    def fake_generate_cv_pdf(*, offer, profile, output_dir):
-        output_path = Path(output_dir) / "cv.pdf"
-        output_path.write_bytes(b"pdf")
-        return output_path
-
-    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
-    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
+    monkeypatch.setattr(runner_module, "sync_run_to_supabase", fake_sync_run_to_supabase)
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: (_ for _ in ()).throw(RuntimeError("profile should not load")))
+    monkeypatch.setattr(runner_module, "generate_cv_docx", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("docx should not generate")))
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("pdf should not generate")))
 
     summary = run_job_search(
         _config(
@@ -1863,12 +1866,17 @@ def test_runner_successful_supabase_sync_persists_seen_offer_with_candidate_pack
         export_dir=tmp_path / "exports",
     )
 
-    assert summary["total_generated_cvs"] == 1
+    assert summary["total_generated_cvs"] == 0
+    assert sync_calls[0]["generated_docx_paths"] == []
+    assert sync_calls[0]["generated_pdf_paths"] == []
+    assert sync_calls[0]["candidate_pack_paths"] == []
+    assert summary["supabase_applications_synced_count"] == 0
+    assert summary["supabase_documents_synced_count"] == 0
     assert summary["supabase_sync_success"] is True
     assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
 
 
-def test_runner_resilient_supabase_error_with_candidate_pack_keeps_offer_unseen(
+def test_runner_resilient_supabase_error_without_candidate_pack_persists_seen_offer(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
@@ -1880,21 +1888,9 @@ def test_runner_resilient_supabase_error_with_candidate_pack_keeps_offer_unseen(
         "sync_run_to_supabase",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("secret-value")),
     )
-    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
-
-    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
-        output_path = Path(output_dir) / "cv.docx"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text("docx", encoding="utf-8")
-        return output_path
-
-    def fake_generate_cv_pdf(*, offer, profile, output_dir):
-        output_path = Path(output_dir) / "cv.pdf"
-        output_path.write_bytes(b"pdf")
-        return output_path
-
-    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
-    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: (_ for _ in ()).throw(RuntimeError("profile should not load")))
+    monkeypatch.setattr(runner_module, "generate_cv_docx", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("docx should not generate")))
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("pdf should not generate")))
 
     summary = run_job_search(
         _config(
@@ -1912,14 +1908,17 @@ def test_runner_resilient_supabase_error_with_candidate_pack_keeps_offer_unseen(
 
     assert summary["total_new"] == 1
     assert summary["export_path"] is not None
+    assert summary["total_generated_cvs"] == 0
+    assert summary["generated_cvs"] == []
+    assert summary["generated_pdfs"] == []
     assert summary["supabase_sync_success"] is False
     assert summary["supabase_sync_error"] == "RuntimeError"
-    assert not (tmp_path / "data" / "seen_offer_ids.json").exists()
+    assert json.loads((tmp_path / "data" / "seen_offer_ids.json").read_text(encoding="utf-8")) == ["A1"]
     assert discord_calls[0]["supabase_sync_success"] is False
     assert "secret-value" not in str(summary)
 
 
-def test_runner_fail_run_on_supabase_error_with_candidate_pack_keeps_offer_unseen(
+def test_runner_fail_run_on_supabase_error_without_candidate_pack_keeps_offer_unseen(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = FakeFranceTravailClient([[_wordpress_offer("A1")]])
@@ -1930,21 +1929,9 @@ def test_runner_fail_run_on_supabase_error_with_candidate_pack_keeps_offer_unsee
         "sync_run_to_supabase",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("secret-value")),
     )
-    monkeypatch.setattr(runner_module, "load_profile", lambda path: object())
-
-    def fake_generate_cv_docx(*, offer, profile, output_dir, mode):
-        output_path = Path(output_dir) / "cv.docx"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text("docx", encoding="utf-8")
-        return output_path
-
-    def fake_generate_cv_pdf(*, offer, profile, output_dir):
-        output_path = Path(output_dir) / "cv.pdf"
-        output_path.write_bytes(b"pdf")
-        return output_path
-
-    monkeypatch.setattr(runner_module, "generate_cv_docx", fake_generate_cv_docx)
-    monkeypatch.setattr(runner_module, "generate_cv_pdf", fake_generate_cv_pdf)
+    monkeypatch.setattr(runner_module, "load_profile", lambda path: (_ for _ in ()).throw(RuntimeError("profile should not load")))
+    monkeypatch.setattr(runner_module, "generate_cv_docx", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("docx should not generate")))
+    monkeypatch.setattr(runner_module, "generate_cv_pdf", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("pdf should not generate")))
 
     with pytest.raises(RuntimeError) as exc_info:
         run_job_search(

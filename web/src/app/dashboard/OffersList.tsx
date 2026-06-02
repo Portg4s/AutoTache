@@ -3,6 +3,8 @@
 import { useActionState, useMemo, useState } from "react";
 import { ExternalLink, SlidersHorizontal, Star } from "lucide-react";
 import { toggleOfferFavoriteAction, type OfferFavoriteActionState } from "@/app/favorites/actions";
+import { updateOfferTrackingStatusAction, type OfferTrackingActionState } from "@/app/offer-tracking/actions";
+import { offerTrackingStatusLabels, offerTrackingStatusStyles } from "@/lib/offerTracking";
 import type { Offer, OfferWithFavorite } from "@/lib/supabase/types";
 
 type OfferFilter = "review" | "favorites" | "all" | "rejected";
@@ -21,6 +23,7 @@ const emptyMessages: Record<OfferFilter, string> = {
 };
 
 const initialFavoriteState: OfferFavoriteActionState = {};
+const initialTrackingState: OfferTrackingActionState = {};
 
 function canToggleFavorite(offer: OfferWithFavorite) {
   return offer.isFavorite || offer.decision === "À vérifier" || offer.decision === "Pertinent";
@@ -84,6 +87,46 @@ function FavoriteButton({ offer }: { offer: OfferWithFavorite }) {
         <p className="max-w-36 text-right text-xs font-medium text-teal-700 dark:text-teal-300">{state.success}</p>
       ) : null}
     </div>
+  );
+}
+
+function TrackingStatusControl({ offer }: { offer: OfferWithFavorite }) {
+  const [state, action, isPending] = useActionState(updateOfferTrackingStatusAction, initialTrackingState);
+
+  return (
+    <form action={action} className="flex flex-col gap-1 sm:items-end">
+      <input type="hidden" name="offerId" value={offer.id} />
+      <label
+        className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+        htmlFor={`tracking-${offer.id}`}
+      >
+        Suivi
+      </label>
+      <select
+        id={`tracking-${offer.id}`}
+        name="status"
+        defaultValue={offer.trackingStatus ?? ""}
+        disabled={isPending}
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+        className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+      >
+        <option value="" disabled>
+          Non suivie
+        </option>
+        {Object.entries(offerTrackingStatusLabels).map(([status, label]) => (
+          <option key={status} value={status}>
+            {label}
+          </option>
+        ))}
+      </select>
+      {offer.trackingStatus ? (
+        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${offerTrackingStatusStyles[offer.trackingStatus]}`}>
+          {offerTrackingStatusLabels[offer.trackingStatus]}
+        </span>
+      ) : null}
+      {state.error ? <p className="max-w-48 text-xs font-medium text-red-700 dark:text-red-300">{state.error}</p> : null}
+      {state.success ? <p className="max-w-48 text-xs font-medium text-teal-700 dark:text-teal-300">{state.success}</p> : null}
+    </form>
   );
 }
 
@@ -178,8 +221,11 @@ export function OffersList({ offers }: { offers: OfferWithFavorite[] }) {
 
               {offer.score_reason ? <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{offer.score_reason}</p> : null}
 
-              <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm dark:border-slate-800">
-                <span className="text-slate-500 dark:text-slate-400">Vu le {formatDate(offer.last_seen_at)}</span>
+              <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 text-sm dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex flex-col gap-3">
+                  <span className="text-slate-500 dark:text-slate-400">Vu le {formatDate(offer.last_seen_at)}</span>
+                  <TrackingStatusControl offer={offer} />
+                </div>
                 {offer.offer_url ? (
                   <a
                     href={offer.offer_url}

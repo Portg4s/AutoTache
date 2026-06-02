@@ -9,6 +9,9 @@ export const APPLICATION_STATUSES = [
 ] as const;
 
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
+export const OFFER_TRACKING_STATUSES = ["to_review", "interested", "to_apply", "archived"] as const;
+
+export type OfferTrackingStatus = (typeof OFFER_TRACKING_STATUSES)[number];
 export type OfferDecision = "Pertinent" | "À vérifier" | "Rejeté";
 export type RunStatus = "running" | "completed" | "failed";
 export type RunTriggerType = "scheduled" | "manual" | "local";
@@ -55,6 +58,20 @@ export type OfferFavorite = {
 
 export type OfferFavoriteInsert = Pick<OfferFavorite, "owner_id" | "offer_id">;
 
+export type OfferTracking = {
+  owner_id: string;
+  offer_id: string;
+  status: OfferTrackingStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OfferTrackingInsert = Pick<OfferTracking, "owner_id" | "offer_id" | "status"> &
+  Partial<Pick<OfferTracking, "notes">>;
+
+export type OfferTrackingUpdate = Partial<Pick<OfferTracking, "status" | "notes">>;
+
 export type CandidateDocument = {
   id: string;
   offer_id: string;
@@ -66,6 +83,7 @@ export type CandidateDocument = {
 
 export type OfferWithFavorite = Offer & {
   isFavorite: boolean;
+  trackingStatus: OfferTrackingStatus | null;
 };
 
 export type ApplicationWithOffer = Application & {
@@ -104,6 +122,12 @@ export type Database = {
         Row: OfferFavorite;
         Insert: OfferFavoriteInsert;
         Update: never;
+        Relationships: [];
+      };
+      offer_tracking: {
+        Row: OfferTracking;
+        Insert: OfferTrackingInsert;
+        Update: OfferTrackingUpdate;
         Relationships: [];
       };
       candidate_documents: {

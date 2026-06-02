@@ -4,7 +4,7 @@ import { OffersList } from "./OffersList";
 import { AppHeader } from "@/components/app/AppHeader";
 import { MobileBottomNavigation } from "@/components/app/MobileBottomNavigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Offer, OfferFavorite, OfferWithFavorite, Run } from "@/lib/supabase/types";
+import type { Offer, OfferFavorite, OfferTracking, OfferWithFavorite, Run } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
 
@@ -101,7 +101,7 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [offersResult, runsResult, favoritesResult, applicationsCountResult] = await Promise.all([
+  const [offersResult, runsResult, favoritesResult, trackingResult, applicationsCountResult] = await Promise.all([
     supabase
       .from("offers")
       .select("id,title,company,location,contract_type,decision,score_total,score_reason,offer_url,last_seen_at"),
@@ -111,6 +111,7 @@ export default async function DashboardPage() {
       .order("triggered_at", { ascending: false })
       .limit(1),
     supabase.from("offer_favorites").select("offer_id"),
+    supabase.from("offer_tracking").select("offer_id,status"),
     supabase.from("applications").select("id", { count: "exact", head: true }),
   ]);
 
@@ -118,13 +119,22 @@ export default async function DashboardPage() {
   const favoriteOfferIds = new Set(
     ((favoritesResult.data ?? []) as Pick<OfferFavorite, "offer_id">[]).map((favorite) => favorite.offer_id),
   );
+  const trackingByOfferId = new Map(
+    ((trackingResult.data ?? []) as Pick<OfferTracking, "offer_id" | "status">[]).map((tracking) => [
+      tracking.offer_id,
+      tracking.status,
+    ]),
+  );
   const offersWithFavorites: OfferWithFavorite[] = offers.map((offer) => ({
     ...offer,
     isFavorite: favoriteOfferIds.has(offer.id),
+    trackingStatus: trackingByOfferId.get(offer.id) ?? null,
   }));
   const latestRun = ((runsResult.data?.[0] ?? null) as Run | null);
   const applicationsCount = applicationsCountResult.count ?? 0;
-  const hasLoadError = Boolean(offersResult.error || runsResult.error || favoritesResult.error || applicationsCountResult.error);
+  const hasLoadError = Boolean(
+    offersResult.error || runsResult.error || favoritesResult.error || trackingResult.error || applicationsCountResult.error,
+  );
   const toReview = offers.filter((offer) => offer.decision === "À vérifier").length;
   const rejected = offers.filter((offer) => offer.decision === "Rejeté").length;
 
